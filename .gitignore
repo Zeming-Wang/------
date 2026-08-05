@@ -1,0 +1,49 @@
+# Fixed upstream framework and reference material
+/masfactory/
+/2502.04180v2.pdf
+MaAS-main/2502.04180v2.md
+
+# Local secrets and machine-specific configuration
+MaAS-main/config/config2.yaml
+MaAS-main/.maas/config2.yaml
+*.env
+*.env.*
+!.env.example
+
+# Python caches, environments, and build metadata
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+*.egg-info/
+build/
+dist/
+
+# Experiment outputs and local state
+MaAS-main/logs/
+MaAS-main/workspace/
+*.log
+*.out
+
+# Generated model artifacts
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+
+# Node/Vite dependencies and build output
+**/node_modules/
+**/.vite/
+**/dist/
+**/build/
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
