@@ -1,0 +1,38 @@
+general:
+  # Device used only for the local RL policy network that samples candidate
+  # inquiry actions. API-based LLM calls are not affected by this setting.
+  # Keep "cpu" as the default for portability; use "cuda" only when CUDA,
+  # a compatible PyTorch build, and an available GPU are all present.
+  device: "cpu"
+
+# Select one of DXY, GMD, or CMD after placing the corresponding local data files.
+dataset:
+  name: "DXY"
+
+llm_for_normal_agents:
+  # Supported providers: "openai", "openrouter", "deepseek".
+  # The corresponding API key and base URL are read from .env. 
+  provider: "openai"
+  model_name: "gpt-4o-mini"
+  temperature: 0.1
+
+llm_for_confidence_agent:
+  # Supported providers are the same as llm_for_normal_agents.
+  # This model is used by API-based BTP confidence estimation and must support
+  # token logprobs/top_logprobs. If the endpoint does not return logprobs,
+  # confidence estimation will frequently use fallback values.
+  provider: "openai"
+  model_name: "gpt-4o-mini"
+  temperature: 0.1
+
+confidence_estimation:
+  fallback_margin: 2.0
+  btp_temperature: 1.0
+  disease_temperature: 0.7
+
+api_reliability:
+  normal_agent_max_attempts: 6
+  confidence_agent_max_attempts: 8
+  retry_base_delay_seconds: 1.0
+  retry_max_delay_seconds: 30.0
+  request_timeout_seconds: 120.0

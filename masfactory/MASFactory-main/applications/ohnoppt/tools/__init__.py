@@ -1,0 +1,31 @@
+from .external_pipeline_tools import (
+    compile_latex_with_tectonic,
+    convert_office_to_pdf,
+    crop_image,
+    ensure_playwright_env,
+    html_to_pdf_with_playwright,
+    images_to_pdf,
+    merge_pdfs,
+    pdf_extract_images,
+    pdf_info,
+    pdf_to_pngs,
+    pdf_to_text,
+    require_binary,
+    run_command,
+)
+
+__all__ = [
+    "compile_latex_with_tectonic",
+    "convert_office_to_pdf",
+    "crop_image",
+    "ensure_playwright_env",
+    "html_to_pdf_with_playwright",
+    "images_to_pdf",
+    "merge_pdfs",
+    "pdf_extract_images",
+    "pdf_info",
+    "pdf_to_pngs",
+    "pdf_to_text",
+    "require_binary",
+    "run_command",
+]

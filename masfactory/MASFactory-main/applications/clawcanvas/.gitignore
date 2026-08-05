@@ -1,0 +1,6 @@
+exports/
+frontend/node_modules/
+frontend/dist/
+backend/__pycache__/
+backend/tests/__pycache__/
+backend/clawcanvas_backend/__pycache__/

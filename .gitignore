@@ -1,5 +1,9 @@
 # Fixed upstream framework and reference material
-/masfactory/
+/masfactory/MASFactory-main/masfactory/
+/masfactory/MASFactory-main/docs/
+/masfactory/MASFactory-main/masfactory-visualizer/
+/masfactory/MASFactory-main/README.md
+/masfactory/MASFactory-main/README.zh.md
 /2502.04180v2.pdf
 MaAS-main/2502.04180v2.md
 
@@ -41,6 +45,8 @@ MaAS-main/workspace/
 **/.vite/
 **/dist/
 **/build/
+**/tiktoken_cache/
+**/cache/
 
 # Editor and OS files
 .vscode/

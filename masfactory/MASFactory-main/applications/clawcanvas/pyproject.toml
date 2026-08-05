@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clawcanvas"
+version = "0.1.0"
+description = "ClawCanvas is a MASFactory-based skill studio for designing, validating, testing, and exporting workflow skills."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "flask>=3.0.0",
+    "flask-cors>=4.0.0",
+    "gunicorn>=22.0.0",
+    "masfactory>=1.0.4",
+    "openai>=1.97.0",
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+clawcanvas-backend = "clawcanvas_backend.app:main"
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["clawcanvas_backend*"]

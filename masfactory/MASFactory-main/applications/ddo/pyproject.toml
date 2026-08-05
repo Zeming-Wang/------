@@ -1,0 +1,24 @@
+[project]
+name = "masfactory-ddo"
+version = "0.1.0"
+description = "MASFactory-based reproduction of DDO for LLM-based medical consultation"
+readme = "README.md"
+authors = [
+    { name = "sds202", email = "3410318580@qq.com" }
+]
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "masfactory",
+    "gymnasium>=0.29.1,<1.3.0",
+    "openai>=2.36.0",
+    "python-dotenv>=1.2.2",
+    "pyyaml>=6.0.3",
+    "stable-baselines3==2.8.0",
+    "tqdm>=4.67.3",
+]
+
+[tool.uv.sources]
+masfactory = { path = "../..", editable = true }
+
+[tool.uv]
+package = false
