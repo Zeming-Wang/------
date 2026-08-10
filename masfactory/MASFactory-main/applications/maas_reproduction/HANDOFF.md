@@ -836,6 +836,81 @@ Current local environment lacks some heavy dependencies. Delaying imports lets t
 
 ## Verification Snapshot
 
+## Latest Update: Runtime Initialization And Checkpoint Save
+
+Date: 2026-08-10
+
+Files changed in this update:
+
+```text
+applications/maas_reproduction/maas_reproduction/runtime/initializer.py
+applications/maas_reproduction/maas_reproduction/runtime/__init__.py
+applications/maas_reproduction/maas_reproduction/nodes/training_controller.py
+applications/maas_reproduction/tests/test_runtime_initializer.py
+applications/maas_reproduction/tests/test_training_controller.py
+applications/maas_reproduction/HANDOFF.md
+```
+
+Behavior added:
+
+- `build_runtime_attributes(settings, specific_indices=None, workflow_class=None)` now creates the objects that the MASFactory `TrainingLoop` expects in attributes:
+
+```text
+settings, controller, optimizer, operator_embeddings, architecture_workflow,
+problems, problem_index, repetition, batch_index, batch_logprobs,
+batch_scores, batch_costs, all_scores, previous_cost, batch_size,
+device, run_directory
+```
+
+- This maps directly to original MaAS `Optimizer._optimize_graph_maas()`:
+  - `MultiLayerController(device=...)`
+  - `torch.optim.Adam(controller.parameters(), lr=...)`
+  - operator descriptions from `train/template/operator.json`
+  - `torch.stack([get_sentence_embedding(...)])`
+  - `Workflow(name, llm_config, dataset, controller, operator_embeddings)`
+  - training JSONL data loaded before evaluation
+
+- Test mode loads the controller checkpoint and sets `controller.eval()`, matching original MaAS `Optimizer.test()`.
+- Graph mode now saves `controller.state_dict()` at final `TrainingLoop` termination. This restores original MaAS `BaseBenchmark.run_evaluation()` behavior, where training writes `<dataset>_controller_sample<sample>.pth`.
+
+Tests run for this update:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'; & C:\Users\lenovo\.conda\envs\mas_env\python.exe -m unittest applications\maas_reproduction\tests\test_runtime_initializer.py applications\maas_reproduction\tests\test_training_controller.py
+```
+
+Result:
+
+```text
+Ran 5 tests in 0.039s
+OK
+```
+
+Full verification:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'; $env:METAGPT_PROJECT_ROOT='C:\Users\lenovo\Desktop\论文复现相关\MaAS-main'; & C:\Users\lenovo\.conda\envs\mas_env\python.exe -m unittest discover applications\maas_reproduction\tests
+```
+
+Result:
+
+```text
+Ran 34 tests in 20.375s
+OK
+```
+
+Compile verification:
+
+```powershell
+& C:\Users\lenovo\.conda\envs\mas_env\python.exe -m compileall -q applications\maas_reproduction
+```
+
+Result: exit code 0
+
+Remaining practical blocker:
+
+- `ArchitectureExecNode` still needs actual optimized architecture/operator/prompt assets under `applications/maas_reproduction/assets/optimized/...`, or the CLI must point `MAAS_OPTIMIZED_ROOT` at a compatible MaAS optimized directory. Without this, `load_workflow_class(settings)` cannot import the dataset `graph.py` and its operator/template dependencies.
+
 Fresh verification before writing this handoff:
 
 ```powershell
