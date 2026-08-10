@@ -196,6 +196,7 @@ applications\maas_reproduction\maas_reproduction\nodes\training_controller.py
 applications\maas_reproduction\maas_reproduction\runtime\__init__.py
 applications\maas_reproduction\maas_reproduction\runtime\async_runner.py
 applications\maas_reproduction\maas_reproduction\runtime\data_loader.py
+applications\maas_reproduction\maas_reproduction\runtime\initializer.py
 applications\maas_reproduction\maas_reproduction\workflow.py
 ```
 
@@ -583,6 +584,7 @@ Known tests:
 - `test_config_node.py`
 - `test_result_node.py`
 - `test_workflow.py`
+- `test_runtime_initializer.py`
 
 Additional coverage added after review:
 
@@ -595,6 +597,8 @@ Additional coverage added after review:
 - ConfigNode MaAS defaults and runtime settings creation
 - ResultNode final summary output
 - RootGraph build wiring
+- runtime attribute initialization
+- Graph-mode controller checkpoint save at final loop termination
 
 Latest verification commands run from:
 
@@ -611,9 +615,9 @@ $env:PYTHONPATH='applications\maas_reproduction'; & C:\Users\lenovo\.conda\envs\
 Result:
 
 ```text
-................................
+..................................
 ----------------------------------------------------------------------
-Ran 32 tests in 20.274s
+Ran 34 tests in 20.375s
 
 OK
 ```
@@ -733,36 +737,25 @@ Completed:
 14. `nodes/config_node.py`
 15. `nodes/result_node.py`
 16. `workflow.py` RootGraph wiring
+17. `runtime/initializer.py`
+18. Graph-mode controller checkpoint save in `nodes/training_controller.py`
 
 Not completed:
 
 1. CLI entry point
-2. runtime object initialization:
-   - controller
-   - optimizer
-   - operator embeddings
-   - architecture workflow
-   - problems list
-3. optimized architecture/operator/prompt migration
-4. HumanEval sanitize equivalence
-5. golden reference comparison
-6. README.md
-7. REPRODUCTION.md
-8. requirements.txt
+2. optimized architecture/operator/prompt migration
+3. HumanEval sanitize equivalence
+4. golden reference comparison
+5. README.md
+6. REPRODUCTION.md
+7. requirements.txt
 
 ## Next Implementation Steps
 
 Recommended next order:
 
-1. Implement runtime initialization helper:
-   - build `MaASRuntimeSettings`
-   - instantiate controller
-   - instantiate optimizer
-   - load/create operator embeddings
-   - load migrated architecture workflow
-   - load problems into attributes
-2. Implement `main.py` CLI.
-3. Migrate optimized architecture files and operator/prompt assets needed by `ArchitectureExecNode`.
+1. Migrate optimized architecture files and operator/prompt assets needed by `ArchitectureExecNode`.
+2. Implement `main.py` CLI that calls `build_runtime_attributes()` before invoking the MASFactory graph.
 4. Run a one-query smoke test.
 5. Run a one-batch smoke test.
 6. Generate golden reference traces on CPU.
@@ -846,15 +839,15 @@ Current local environment lacks some heavy dependencies. Delaying imports lets t
 Fresh verification before writing this handoff:
 
 ```powershell
-$env:PYTHONPATH='applications\maas_reproduction'; & C:\Users\lenovo\.conda\envs\mas_env\python.exe -m unittest discover applications\maas_reproduction\tests
+$env:PYTHONPATH='applications\maas_reproduction'; $env:METAGPT_PROJECT_ROOT='C:\Users\lenovo\Desktop\论文复现相关\MaAS-main'; & C:\Users\lenovo\.conda\envs\mas_env\python.exe -m unittest discover applications\maas_reproduction\tests
 ```
 
 Output:
 
 ```text
-................................
+..................................
 ----------------------------------------------------------------------
-Ran 32 tests in 20.274s
+Ran 34 tests in 20.375s
 
 OK
 ```

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import torch
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,15 +65,19 @@ def _write_final_result(input_data: dict[str, object], attributes: dict[str, obj
     settings = attributes["settings"]
     all_scores = attributes.get("all_scores", [])
     average_score = sum(all_scores) / len(all_scores) if all_scores else 0.0
+    checkpoint_path = settings.paths.controller_checkpoint(
+        settings.dataset,
+        settings.optimizer.round_number,
+        settings.optimizer.sample,
+    )
+    if settings.mode == "Graph":
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(attributes["controller"].state_dict(), checkpoint_path)
+        logger.info("Saved MaAS controller parameters to %s", checkpoint_path)
+
     input_data["average_score"] = average_score
     input_data["round"] = settings.optimizer.round_number
-    input_data["checkpoint_path"] = str(
-        settings.paths.controller_checkpoint(
-            settings.dataset,
-            settings.optimizer.round_number,
-            settings.optimizer.sample,
-        )
-    )
+    input_data["checkpoint_path"] = str(checkpoint_path)
     input_data["result_path"] = str(settings.run_directory)
     input_data["runtime_metadata"] = {
         "dataset": settings.dataset,
