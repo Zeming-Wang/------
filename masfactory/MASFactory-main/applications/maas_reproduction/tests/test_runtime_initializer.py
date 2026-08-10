@@ -50,10 +50,51 @@ class RuntimeInitializerTest(unittest.TestCase):
         self.assertIs(attrs["architecture_workflow"].controller, attrs["controller"])
         self.assertIs(attrs["architecture_workflow"].operator_embeddings, attrs["operator_embeddings"])
 
+    def test_load_workflow_class_supports_relative_template_imports(self) -> None:
+        from maas_reproduction.runtime.initializer import load_workflow_class
 
-def _settings(root: Path, mode: str) -> MaASRuntimeSettings:
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            settings = _settings(root, mode="Graph")
+            package_root = root / "assets" / "optimized"
+            train_root = package_root / "GSM8K" / "train"
+            template_root = train_root / "template"
+            template_root.mkdir(parents=True)
+            for package_dir in (
+                package_root,
+                package_root / "GSM8K",
+                train_root,
+                template_root,
+            ):
+                (package_dir / "__init__.py").write_text("", encoding="utf-8")
+            (template_root / "marker.py").write_text("VALUE = 'local-template'\n", encoding="utf-8")
+            (train_root / "graph.py").write_text(
+                "from .template import marker\n\n"
+                "class Workflow:\n"
+                "    marker = marker.VALUE\n",
+                encoding="utf-8",
+            )
+
+            workflow_class = load_workflow_class(settings)
+
+        self.assertEqual(workflow_class.marker, "local-template")
+
+    def test_load_workflow_class_imports_migrated_optimized_assets(self) -> None:
+        from maas_reproduction.runtime.initializer import load_workflow_class
+
+        application_root = Path(__file__).resolve().parents[1]
+        for dataset in ("GSM8K", "MATH", "HumanEval"):
+            for mode in ("Graph", "Test"):
+                settings = _settings(application_root, mode=mode, dataset=dataset)
+
+                workflow_class = load_workflow_class(settings)
+
+                self.assertEqual(workflow_class.__name__, "Workflow")
+
+
+def _settings(root: Path, mode: str, dataset: str = "GSM8K") -> MaASRuntimeSettings:
     return MaASRuntimeSettings(
-        dataset="GSM8K",
+        dataset=dataset,
         mode=mode,
         paths=MaASPaths.from_application_root(root),
         optimizer=OptimizerSettings(

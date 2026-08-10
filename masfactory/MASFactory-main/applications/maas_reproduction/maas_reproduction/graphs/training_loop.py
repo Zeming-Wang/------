@@ -74,16 +74,22 @@ def attach_training_loop_body(loop) -> None:
         CustomNode,
         "ArchitectureExecNode",
         forward=architecture_exec_forward,
+        pull_keys=None,
+        push_keys={},
     )
     evaluator_node = loop.create_node(
         CustomNode,
         "EvaluatorNode",
         forward=evaluator_forward,
+        pull_keys=None,
+        push_keys={},
     )
     loss_update_node = loop.create_node(
         CustomNode,
         "LossUpdateNode",
         forward=loss_update_forward,
+        pull_keys=None,
+        push_keys={},
     )
 
     loop.edge_from_controller(architecture_node, CONTROLLER_TO_ARCHITECTURE_KEYS)

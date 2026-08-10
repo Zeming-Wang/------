@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import json
 import logging
+import os
 from pathlib import Path
+import sys
 from typing import Iterable
 
 import torch
@@ -76,12 +78,27 @@ def build_runtime_attributes(
 
 
 def load_workflow_class(settings):
-    graph_file = settings.architecture_root / "graph.py"
-    module_name = f"maas_reproduction_runtime_{settings.dataset}_{settings.mode}_{settings.optimizer.round_number}"
-    spec = importlib.util.spec_from_file_location(module_name, graph_file)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    maas_project_root = os.getenv("METAGPT_PROJECT_ROOT")
+    if maas_project_root:
+        if maas_project_root in sys.path:
+            sys.path.remove(maas_project_root)
+        sys.path.insert(0, maas_project_root)
+    application_root = str(settings.paths.application_root)
+    if application_root in sys.path:
+        sys.path.remove(application_root)
+    sys.path.insert(0, application_root)
+    split = "test" if settings.mode == "Test" else "train"
+    module_name = f"assets.optimized.{settings.dataset}.{split}.graph"
+    _clear_assets_modules()
+    importlib.invalidate_caches()
+    module = importlib.import_module(module_name)
     return module.Workflow
+
+
+def _clear_assets_modules() -> None:
+    for module_name in list(sys.modules):
+        if module_name == "assets" or module_name.startswith("assets."):
+            del sys.modules[module_name]
 
 
 def _load_operator_embeddings(settings, device: torch.device) -> torch.Tensor:

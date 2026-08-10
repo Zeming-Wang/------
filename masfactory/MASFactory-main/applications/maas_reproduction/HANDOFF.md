@@ -107,7 +107,13 @@ Environment fixes already applied:
 
 2. Installed `antlr4-python3-runtime==4.11.1`. This fixes `sympy.parsing.latex.parse_latex()`.
 
-3. Set conda env config var:
+3. Downgraded `httpx` from `0.28.1` to `0.25.2`. This fixes MaAS/OpenAI client construction for real LLM runs:
+
+```text
+TypeError: AsyncClient.__init__() got an unexpected keyword argument 'proxies'
+```
+
+4. Set conda env config var:
 
 ```text
 METAGPT_PROJECT_ROOT = C:\Users\lenovo\Desktop\论文复现相关\MaAS-main
@@ -123,7 +129,8 @@ Known remaining environment notes:
 
 ```text
 masfactory 1.0.4 wants newer openai/anthropic/numpy
-metagpt 0.8.1 wants httpx==0.25.2 and websockets==11.0.3
+google-genai 1.28.0 wants httpx>=0.28.1
+metagpt 0.8.1 wants websockets==11.0.3
 ```
 
 Current practical verification passes for the migration path:
@@ -171,7 +178,13 @@ masfactory\MASFactory-main\masfactory\core\node.py
 Current file list under `applications/maas_reproduction`:
 
 ```text
+applications\maas_reproduction\main.py
 applications\maas_reproduction\__init__.py
+applications\maas_reproduction\assets\data\gsm8k_train.jsonl
+applications\maas_reproduction\assets\data\gsm8k_test.jsonl
+applications\maas_reproduction\assets\optimized\<dataset>\<split>\graph.py
+applications\maas_reproduction\assets\optimized\<dataset>\<split>\template\*.py
+applications\maas_reproduction\assets\optimized\<dataset>\<split>\template\operator.json
 applications\maas_reproduction\maas_reproduction\__init__.py
 applications\maas_reproduction\maas_reproduction\benchmarks\__init__.py
 applications\maas_reproduction\maas_reproduction\benchmarks\gsm8k.py
@@ -557,10 +570,10 @@ build_maas_reproduction_graph(name="MaASReproduction")
 Builds the phase-1 MASFactory RootGraph:
 
 ```text
-ConfigNode -> TrainingLoop -> ResultNode
+entry -> ConfigNode -> TrainingLoop -> ResultNode -> exit
 ```
 
-`ConfigNode` pushes `settings` into RootGraph attributes so `TrainingLoop` can pull it. Runtime objects such as `problems`, `architecture_workflow`, `controller`, `optimizer`, and `operator_embeddings` still need to be supplied by the next runtime initialization stage.
+`ConfigNode` pushes `settings` into RootGraph attributes so `TrainingLoop` can pull it. Runtime objects such as `problems`, `architecture_workflow`, `controller`, `optimizer`, and `operator_embeddings` are supplied through invocation attributes by `build_runtime_attributes()` or by tests using an injected fake workflow.
 
 ## Tests Added
 
@@ -585,6 +598,10 @@ Known tests:
 - `test_result_node.py`
 - `test_workflow.py`
 - `test_runtime_initializer.py`
+- `test_model_config.py`
+- `test_main.py`
+- `test_root_graph_integration.py`
+- `test_optimized_assets.py`
 
 Additional coverage added after review:
 
@@ -599,6 +616,11 @@ Additional coverage added after review:
 - RootGraph build wiring
 - runtime attribute initialization
 - Graph-mode controller checkpoint save at final loop termination
+- local optimized Workflow assets import checks
+- `METAGPT_PROJECT_ROOT` path precedence for MaAS model config imports
+- `main.run()` runtime initialization before RootGraph invocation
+- real RootGraph.invoke path through ConfigNode -> TrainingLoop -> ArchitectureExecNode -> EvaluatorNode -> LossUpdateNode -> ResultNode
+- optimized Workflow log probability accumulation stays as a tensor and avoids `.item()`
 
 Latest verification commands run from:
 
@@ -615,9 +637,9 @@ $env:PYTHONPATH='applications\maas_reproduction'; & C:\Users\lenovo\.conda\envs\
 Result:
 
 ```text
-..................................
+........................................
 ----------------------------------------------------------------------
-Ran 34 tests in 20.375s
+Ran 40 tests in 29.124s
 
 OK
 ```
@@ -739,13 +761,19 @@ Completed:
 16. `workflow.py` RootGraph wiring
 17. `runtime/initializer.py`
 18. Graph-mode controller checkpoint save in `nodes/training_controller.py`
+19. Optimized architecture/operator/prompt assets copied into `applications/maas_reproduction/assets/optimized`
+20. `main.py` CLI entry point
+21. `METAGPT_PROJECT_ROOT` path precedence for MaAS imports
+22. RootGraph entry/exit wiring
+23. TrainingLoop body nodes use `push_keys={}` to avoid business-message fields overwriting Loop attributes
+24. Optimized Workflow `sum_log_prob` tensor accumulation is consistent across GSM8K, MATH, and HumanEval train/test
 
 Not completed:
 
-1. CLI entry point
-2. optimized architecture/operator/prompt migration
-3. HumanEval sanitize equivalence
-4. golden reference comparison
+1. MATH and HumanEval dataset JSONL files
+2. HumanEval sanitize equivalence
+3. golden reference comparison
+4. one-query and one-batch smoke tests against a real or stubbed LLM config
 5. README.md
 6. REPRODUCTION.md
 7. requirements.txt
@@ -754,12 +782,11 @@ Not completed:
 
 Recommended next order:
 
-1. Migrate optimized architecture files and operator/prompt assets needed by `ArchitectureExecNode`.
-2. Implement `main.py` CLI that calls `build_runtime_attributes()` before invoking the MASFactory graph.
-4. Run a one-query smoke test.
-5. Run a one-batch smoke test.
-6. Generate golden reference traces on CPU.
-7. Add README and REPRODUCTION docs.
+1. Run a one-query smoke test for GSM8K.
+2. Run a one-batch smoke test for GSM8K.
+3. Add or locate MATH and HumanEval JSONL data if those datasets must run locally.
+4. Generate golden reference traces on CPU.
+5. Add README and REPRODUCTION docs.
 
 ## Manual Setup Needed
 
@@ -907,9 +934,303 @@ Compile verification:
 
 Result: exit code 0
 
-Remaining practical blocker:
+Remaining practical blocker after this snapshot:
 
-- `ArchitectureExecNode` still needs actual optimized architecture/operator/prompt assets under `applications/maas_reproduction/assets/optimized/...`, or the CLI must point `MAAS_OPTIMIZED_ROOT` at a compatible MaAS optimized directory. Without this, `load_workflow_class(settings)` cannot import the dataset `graph.py` and its operator/template dependencies.
+- Optimized assets now import locally. The next live smoke run depends on a valid MaAS model config and provider credentials because `Workflow.__call__` calls the real LLM backend.
+
+## Latest Update: Optimized Assets And CLI
+
+Date: 2026-08-10
+
+Files changed in this update:
+
+```text
+applications/maas_reproduction/main.py
+applications/maas_reproduction/assets/data/gsm8k_train.jsonl
+applications/maas_reproduction/assets/data/gsm8k_test.jsonl
+applications/maas_reproduction/assets/optimized/GSM8K/{train,test}/...
+applications/maas_reproduction/assets/optimized/MATH/{train,test}/...
+applications/maas_reproduction/assets/optimized/HumanEval/{train,test}/...
+applications/maas_reproduction/maas_reproduction/config/model_config.py
+applications/maas_reproduction/maas_reproduction/runtime/initializer.py
+applications/maas_reproduction/tests/test_main.py
+applications/maas_reproduction/tests/test_model_config.py
+applications/maas_reproduction/tests/test_runtime_initializer.py
+applications/maas_reproduction/HANDOFF.md
+```
+
+Behavior added:
+
+- Copied optimized MaAS `graph.py` and `template` assets for GSM8K, MATH, and HumanEval train/test into the application-local assets directory.
+- Excluded original runtime artifacts such as `round_1`, smoke logs, CSVs, result JSON, and `__pycache__`.
+- Rewrote copied optimized imports from original absolute paths such as:
+
+```python
+maas.ext.maas.scripts.optimized.GSM8K.train.template.operator
+```
+
+to local relative imports such as:
+
+```python
+from .template import operator
+from .template.operator_registry import operator_mapping, operator_names
+from .operator_an import *
+from .op_prompt import *
+```
+
+This keeps the copied `Workflow.__call__` algorithm intact while making the optimized assets import from the application-local copy.
+
+- `load_workflow_class(settings)` now imports Workflow as an assets package:
+
+```text
+assets.optimized.<dataset>.<train|test>.graph
+```
+
+This supports relative imports inside copied `graph.py`.
+
+- `load_workflow_class()` and `resolve_model_configs()` now move `METAGPT_PROJECT_ROOT` to the front of `sys.path` before importing MaAS modules. This fixes the local MASFactory `maas/tools` namespace directory shadowing original MaAS `maas.tools`.
+- Added `main.py`:
+
+```python
+run(input_data, specific_indices=None)
+```
+
+The CLI flow is:
+
+```text
+config_forward(input_data, {})
+-> build_runtime_attributes(settings, specific_indices)
+-> build_maas_reproduction_graph()
+-> graph.build()
+-> graph.invoke(input_data, attributes=runtime_attributes)
+```
+
+This maps to original MaAS CLI + Optimizer startup while preserving MASFactory RootGraph invocation.
+
+Data copied:
+
+- `gsm8k_train.jsonl`
+- `gsm8k_test.jsonl`
+
+Data still missing locally:
+
+- MATH JSONL
+- HumanEval JSONL
+
+Tests run for this update:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'; $env:METAGPT_PROJECT_ROOT='C:\Users\lenovo\Desktop\论文复现相关\MaAS-main'; & C:\Users\lenovo\.conda\envs\mas_env\python.exe -m unittest applications\maas_reproduction\tests\test_runtime_initializer.py applications\maas_reproduction\tests\test_model_config.py
+```
+
+Result:
+
+```text
+Ran 4 tests in 11.670s
+OK
+```
+
+Full verification:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'; $env:METAGPT_PROJECT_ROOT='C:\Users\lenovo\Desktop\论文复现相关\MaAS-main'; & C:\Users\lenovo\.conda\envs\mas_env\python.exe -m unittest discover applications\maas_reproduction\tests
+```
+
+Result:
+
+```text
+Ran 38 tests in 33.717s
+OK
+```
+
+Compile verification:
+
+```powershell
+& C:\Users\lenovo\.conda\envs\mas_env\python.exe -m compileall -q applications\maas_reproduction
+```
+
+Result: exit code 0
+
+CLI help verification:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'; & C:\Users\lenovo\.conda\envs\mas_env\python.exe -m applications.maas_reproduction.main --help
+```
+
+Result:
+
+```text
+usage: main.py [-h] --dataset {GSM8K,HumanEval,MATH} ...
+exit code 0
+```
+
+Next-step impact:
+
+- The previous import blocker for `ArchitectureExecNode` is resolved for optimized assets.
+- The next meaningful verification is a GSM8K single-query smoke run. That will call the real LLM provider unless a stub LLM config/backend is introduced, so credentials/model config must be valid before running it live.
+
+## Latest Update: Real RootGraph Integration And Logprob Consistency
+
+Date: 2026-08-10
+
+Files changed in this update:
+
+```text
+applications/maas_reproduction/maas_reproduction/workflow.py
+applications/maas_reproduction/maas_reproduction/graphs/training_loop.py
+applications/maas_reproduction/assets/optimized/GSM8K/test/graph.py
+applications/maas_reproduction/assets/optimized/MATH/train/graph.py
+applications/maas_reproduction/assets/optimized/MATH/test/graph.py
+applications/maas_reproduction/assets/optimized/HumanEval/train/graph.py
+applications/maas_reproduction/assets/optimized/HumanEval/test/graph.py
+applications/maas_reproduction/tests/test_root_graph_integration.py
+applications/maas_reproduction/tests/test_optimized_assets.py
+applications/maas_reproduction/HANDOFF.md
+```
+
+Behavior changed:
+
+- `build_maas_reproduction_graph()` now wires the actual RootGraph entry and exit:
+
+```text
+entry -> ConfigNode -> TrainingLoop -> ResultNode -> exit
+```
+
+Before this, `RootGraph.invoke()` could return `{}` because no entry edge started `ConfigNode` and no exit edge collected `ResultNode`.
+
+- TrainingLoop body nodes now use `push_keys={}`:
+
+```text
+ArchitectureExecNode
+EvaluatorNode
+LossUpdateNode
+```
+
+This prevents business message fields such as `problem_index` from being pushed back into Loop attributes and overwriting scheduler state written by `training_controller()`. The bug manifested as the same problem being repeatedly processed until the Loop max iteration warning.
+
+- Copied optimized Workflows now use tensor log probability accumulation consistently:
+
+```python
+sum_log_prob = torch.tensor(0.0, device=self.device)
+sum_log_prob = sum_log_prob + log_probs_layers[layer_idx]
+```
+
+This was normalized across GSM8K, MATH, and HumanEval train/test assets. The copied assets no longer contain `log_probs_layers[layer_idx].item()` in Workflow logprob accumulation.
+
+Tests added:
+
+- `test_root_graph_integration.py` runs a real `RootGraph.invoke()` with a fake async workflow, covering:
+  - ConfigNode execution
+  - TrainingLoop controller scheduling
+  - ArchitectureExecNode attribute access
+  - EvaluatorNode scoring
+  - LossUpdateNode batch update
+  - final ResultNode output
+  - checkpoint save
+
+- `test_optimized_assets.py` scans optimized graph assets to ensure logprob accumulation stays tensor-based.
+
+Targeted verification:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'; & C:\Users\lenovo\.conda\envs\mas_env\python.exe -m unittest applications\maas_reproduction\tests\test_root_graph_integration.py applications\maas_reproduction\tests\test_optimized_assets.py applications\maas_reproduction\tests\test_workflow.py applications\maas_reproduction\tests\test_training_loop_graph.py
+```
+
+Result:
+
+```text
+Ran 4 tests in 0.028s
+OK
+```
+
+Full verification:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'; $env:METAGPT_PROJECT_ROOT='C:\Users\lenovo\Desktop\论文复现相关\MaAS-main'; & C:\Users\lenovo\.conda\envs\mas_env\python.exe -m unittest discover applications\maas_reproduction\tests
+```
+
+Result:
+
+```text
+Ran 40 tests in 29.124s
+OK
+```
+
+Compile verification:
+
+```powershell
+& C:\Users\lenovo\.conda\envs\mas_env\python.exe -m compileall -q applications\maas_reproduction
+```
+
+Result: exit code 0
+
+## Latest Update: GSM8K Single-Query Live Smoke
+
+Date: 2026-08-10
+
+Environment changed:
+
+```powershell
+& C:\Users\lenovo\.conda\envs\mas_env\python.exe -m pip install httpx==0.25.2
+```
+
+Reason:
+
+- The first live smoke failed before any problem execution while constructing `AsyncOpenAI`.
+- Error:
+
+```text
+TypeError: AsyncClient.__init__() got an unexpected keyword argument 'proxies'
+```
+
+- `httpx==0.25.2` matches MaAS/MetaGPT's expected dependency and allowed the OpenAI client to initialize.
+
+Live smoke command:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'
+$env:METAGPT_PROJECT_ROOT='C:\Users\lenovo\Desktop\论文复现相关\MaAS-main'
+& C:\Users\lenovo\.conda\envs\mas_env\python.exe -m applications.maas_reproduction.main --dataset GSM8K --mode Graph --sample 1 --batch-size 1 --indices 0
+```
+
+This did call the configured LLM provider and therefore used the configured API key.
+
+Result:
+
+```json
+{
+  "average_score": 1.0,
+  "round": 1,
+  "checkpoint_path": "applications/maas_reproduction/assets/optimized/GSM8K/train/round_1/GSM8K_controller_sample1.pth",
+  "result_path": "applications/maas_reproduction/runs/GSM8K/Graph/round_1",
+  "runtime_metadata": {
+    "dataset": "GSM8K",
+    "mode": "Graph",
+    "processed_problems": 1
+  }
+}
+```
+
+Follow-up verification after the environment change:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'; $env:METAGPT_PROJECT_ROOT='C:\Users\lenovo\Desktop\论文复现相关\MaAS-main'; & C:\Users\lenovo\.conda\envs\mas_env\python.exe -m unittest discover applications\maas_reproduction\tests
+```
+
+Result:
+
+```text
+Ran 40 tests in 24.767s
+OK
+```
+
+Compile verification:
+
+```powershell
+& C:\Users\lenovo\.conda\envs\mas_env\python.exe -m compileall -q applications\maas_reproduction
+```
+
+Result: exit code 0
 
 Fresh verification before writing this handoff:
 
@@ -920,9 +1241,9 @@ $env:PYTHONPATH='applications\maas_reproduction'; $env:METAGPT_PROJECT_ROOT='C:\
 Output:
 
 ```text
-..................................
+........................................
 ----------------------------------------------------------------------
-Ran 34 tests in 20.375s
+Ran 40 tests in 29.124s
 
 OK
 ```
@@ -938,3 +1259,230 @@ Output:
 ```text
 exit code 0
 ```
+
+## Latest Update: File-Based GSM8K Two-Query Batch Smoke
+
+Date: 2026-08-10
+
+Added a file-based live smoke script:
+
+```text
+applications/maas_reproduction/scripts/run_gsm8k_batch_smoke.py
+```
+
+Reason:
+
+- The previous two-query instrumentation used `python -` from stdin.
+- On Windows, the original MaAS `Programmer.exec_code()` uses `ProcessPoolExecutor`; spawned child processes cannot reliably re-import `<stdin>`.
+- The new script runs from a real `.py` file and keeps the actual Graph execution path intact.
+
+Data path provenance confirmed:
+
+- `main.py` uses `Path(__file__).resolve().parent` as `application_root`.
+- `MaASPaths.from_application_root(application_root)` sets `data_root = application_root / "assets" / "data"`.
+- `settings.dataset_file` for GSM8K Graph train is:
+
+```text
+applications/maas_reproduction/assets/data/gsm8k_train.jsonl
+```
+
+First two loaded records:
+
+- index 0: Natalia clips problem, expected final answer `72`
+- index 1: Weng babysitting problem, expected final answer `10`
+
+Live smoke command:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'
+$env:METAGPT_PROJECT_ROOT='C:\Users\lenovo\Desktop\���ĸ������\MaAS-main'
+& C:\Users\lenovo\.conda\envs\mas_env\python.exe applications\maas_reproduction\scripts\run_gsm8k_batch_smoke.py --indices 0 1 --batch-size 2
+```
+
+This did call the real configured LLM provider and used the configured API key.
+
+First run of the new script failed before LLM execution because the script passed `{}` to `graph.invoke(...)`; RootGraph entry requires the same config keys as `main.py`. Fixed the script to pass the full input dictionary.
+
+Successful result summary:
+
+```json
+{
+  "average_score": 1.0,
+  "processed_problems": 2,
+  "workflow_call_count": 2,
+  "workflow_predictions": ["72", "10.0"],
+  "workflow_logprob_requires_grad": [true, true],
+  "all_scores": [1.0, 1.0],
+  "optimizer_state_entries": 4,
+  "changed_controller_tensor_count": 4,
+  "max_controller_param_delta": 0.010000001639127731,
+  "checkpoint_exists": true
+}
+```
+
+This confirms the practical training path for a two-problem GSM8K Graph batch:
+
+- GSM8K JSONL data loaded from copied assets.
+- Controller instantiated and sampled architecture logprobs.
+- Optimized GSM8K Workflow executed through `ArchitectureExecNode`.
+- Real LLM calls happened.
+- GSM8K evaluator scored both predictions correctly.
+- `LossUpdateNode` accumulated a full batch and performed an optimizer update.
+- Controller parameters changed.
+- Graph-mode checkpoint was saved.
+
+Observed caveat:
+
+- The final outer `attributes` object reported `batch_logprobs`, `batch_scores`, and `batch_costs` length 2 after the run, despite the optimizer update and parameter changes confirming batch update occurred.
+- This appears related to MASFactory Loop/attribute exposure semantics after body-node execution, not to a missing optimizer update.
+- Do not treat this as a training blocker unless later logic relies on those outer buffer lengths after `RootGraph.invoke()` returns.
+
+Warnings observed:
+
+- Pydantic field-shadow warnings from installed dependencies.
+- `maas.const:get_metagpt_root` logs confirming `METAGPT_PROJECT_ROOT` points at `MaAS-main`.
+- These warnings did not block execution.
+
+## Latest Update: MASFactory Visualizer File
+
+Date: 2026-08-10
+
+Added a visualization-only file:
+
+```text
+applications/maas_reproduction/visual_workflow.py
+```
+
+Purpose:
+
+- This file is intended for the VS Code MASFactory Visualizer Preview panel.
+- It does not call the LLM, does not create controller/optimizer/runtime objects, and does not read API keys.
+- It statically expands the phase-1 execution path so the visualizer can show the important training flow clearly:
+
+```text
+entry
+  -> ConfigNode
+  -> TrainingLoop_Controller
+  -> ArchitectureExecNode
+  -> EvaluatorNode
+  -> LossUpdateNode
+  -> TrainingLoop_Controller
+  -> ResultNode
+  -> exit
+```
+
+The real executable RootGraph remains in:
+
+```text
+applications/maas_reproduction/maas_reproduction/workflow.py
+```
+
+The real TrainingLoop body remains in:
+
+```text
+applications/maas_reproduction/maas_reproduction/graphs/training_loop.py
+```
+
+Use `visual_workflow.py` for visual inspection, and use `main.py` or the smoke scripts for actual execution.
+
+## Clarification: Visualizer Graphs vs Real Runtime Graph
+
+Date: 2026-08-10
+
+Added:
+
+```text
+applications/maas_reproduction/runtime_graph_preview.py
+```
+
+This file is the correct MASFactory Visualizer entry for the real executable RootGraph. It directly calls:
+
+```python
+from maas_reproduction.workflow import build_maas_reproduction_graph
+```
+
+and then builds the graph. It does not initialize runtime attributes or call the LLM, but its topology is produced by the same builder used by `main.py` during real training.
+
+Important distinction:
+
+- `runtime_graph_preview.py`: real MASFactory RootGraph preview, tied to actual CLI/runtime graph construction.
+- `visual_workflow.py`: expanded explanatory diagram that statically shows the intended internal training path; useful for discussion, but not itself part of the training execution path.
+
+The user's criticism is valid: `visual_workflow.py` alone should not be presented as proof of MASFactory integration. Actual MASFactory integration is in:
+
+```text
+main.py
+  -> maas_reproduction.workflow.build_maas_reproduction_graph()
+  -> RootGraph(ConfigNode -> TrainingLoop -> ResultNode)
+  -> TrainingLoop body ArchitectureExecNode -> EvaluatorNode -> LossUpdateNode
+```
+
+The copied optimized MaAS assets are intentionally wrapped inside `ArchitectureExecNode`; they are not split into MASFactory nodes according to the agreed migration boundary.
+
+## Latest Check: Windows ProcessPoolExecutor In Programmer Operator
+
+Date: 2026-08-10
+
+User raised a possible blocker:
+
+```text
+Execution error on attempt 1, error message: Unknown error: A process in the process pool was terminated abruptly...
+```
+
+Investigation result:
+
+- This failure was not reproducible from a real `.py` file entrypoint.
+- A dedicated diagnostic script was added:
+
+```text
+applications/maas_reproduction/scripts/check_programmer_exec_code.py
+```
+
+The script imports the copied optimized `Programmer` operators and directly runs:
+
+```python
+def solve():
+    return 72
+```
+
+Command:
+
+```powershell
+$env:PYTHONPATH='applications\maas_reproduction'
+$env:METAGPT_PROJECT_ROOT='C:\Users\lenovo\Desktop\���ĸ������\MaAS-main'
+& C:\Users\lenovo\.conda\envs\mas_env\python.exe applications\maas_reproduction\scripts\check_programmer_exec_code.py
+```
+
+Verified modules:
+
+```text
+assets.optimized.GSM8K.train.template.operator
+assets.optimized.GSM8K.test.template.operator
+assets.optimized.MATH.train.template.operator
+assets.optimized.MATH.test.template.operator
+```
+
+Result:
+
+```json
+[
+  {"module": "assets.optimized.GSM8K.train.template.operator", "status": "Success", "output": "72"},
+  {"module": "assets.optimized.GSM8K.test.template.operator", "status": "Success", "output": "72"},
+  {"module": "assets.optimized.MATH.train.template.operator", "status": "Success", "output": "72"},
+  {"module": "assets.optimized.MATH.test.template.operator", "status": "Success", "output": "72"}
+]
+```
+
+Important details:
+
+- A too-short diagnostic timeout of 10 seconds produced false timeouts for some modules because Windows process spawn plus MaAS import startup is slow.
+- With a 60 second diagnostic timeout, all four modules succeeded.
+- The original MaAS operator timeouts are higher (`GSM8K=100`, `MATH=600`), so this is not currently a training blocker.
+- The previous abrupt process-pool errors are most consistent with running instrumentation through stdin (`python -`) on Windows. Avoid stdin-based live smoke scripts when `ProcessPoolExecutor` can be reached.
+
+No operator runtime fix was applied because the current file-based CLI/smoke execution path works, and replacing `ProcessPoolExecutor` would change the original MaAS isolation/timeout behavior.
+
+HumanEval note:
+
+- The copied HumanEval optimized `Test.exec_code` path does not use `ProcessPoolExecutor`; it runs direct `exec()` against extracted test cases.
+- HumanEval remains blocked by missing local HumanEval data/assets validation, not by the GSM8K/MATH Programmer process-pool path verified here.

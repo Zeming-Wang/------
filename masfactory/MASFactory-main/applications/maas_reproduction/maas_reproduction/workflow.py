@@ -23,6 +23,19 @@ CONFIG_TO_TRAINING_KEYS = {
     "paths": "Resolved runtime paths.",
 }
 
+ENTRY_TO_CONFIG_KEYS = {
+    "application_root": "MaAS reproduction application root.",
+    "dataset": "Dataset name.",
+    "mode": "Execution mode.",
+    "sample": "MaAS sample count.",
+    "round_number": "MaAS optimization round.",
+    "batch_size": "Training batch size.",
+    "learning_rate": "Controller optimizer learning rate.",
+    "is_textgrad": "Whether textgrad is enabled.",
+    "opt_model_name": "Optimization model name.",
+    "exec_model_name": "Execution model name.",
+}
+
 
 def build_maas_reproduction_graph(name: str = "MaASReproduction") -> RootGraph:
     graph = RootGraph(name=name)
@@ -47,8 +60,10 @@ def build_maas_reproduction_graph(name: str = "MaASReproduction") -> RootGraph:
         forward=result_forward,
     )
 
+    graph.edge_from_entry(config_node, ENTRY_TO_CONFIG_KEYS)
     graph.create_edge(config_node, training_loop, CONFIG_TO_TRAINING_KEYS)
     graph.create_edge(training_loop, result_node, TRAINING_LOOP_PUSH_KEYS)
+    graph.edge_to_exit(result_node, TRAINING_LOOP_PUSH_KEYS)
 
     logger.info("Built MaAS reproduction RootGraph wiring")
     return graph
