@@ -1,5 +1,4 @@
 """TrainingLoop graph builder for the MaAS MASFactory application."""
-
 from __future__ import annotations
 
 import logging

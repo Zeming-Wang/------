@@ -77,6 +77,14 @@ class ScEnsemble(Operator):
 
         answer = response.get("solution_letter", "")
         answer = answer.strip().upper()
+        if answer not in answer_mapping:
+            for char in answer:
+                if char in answer_mapping:
+                    answer = char
+                    break
+            else:
+                logger.warning("ScEnsemble returned invalid solution letter %r; falling back to A", answer)
+                answer = "A"
 
         return {"response": solutions[answer_mapping[answer]]}
 

@@ -33,7 +33,12 @@ class RecordingWorkflow:
         return prediction, cost, logprob
 
 
-def run_smoke(indices: list[int], batch_size: int) -> dict[str, Any]:
+def run_smoke(
+    indices: list[int],
+    batch_size: int,
+    opt_model_name: str,
+    exec_model_name: str,
+) -> dict[str, Any]:
     application_root = Path(__file__).resolve().parents[1]
     input_data = {
         "application_root": application_root,
@@ -44,8 +49,8 @@ def run_smoke(indices: list[int], batch_size: int) -> dict[str, Any]:
         "batch_size": batch_size,
         "learning_rate": 0.01,
         "is_textgrad": False,
-        "opt_model_name": "gpt-4o-mini",
-        "exec_model_name": "gpt-4o-mini",
+        "opt_model_name": opt_model_name,
+        "exec_model_name": exec_model_name,
     }
     config = config_forward(input_data, {})
     settings: MaASRuntimeSettings = config["settings"]
@@ -135,8 +140,21 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--indices", type=int, nargs="+", default=[0, 1])
     parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--opt-model-name", default="gpt-4o-mini")
+    parser.add_argument("--exec-model-name", default="gpt-4o-mini")
     args = parser.parse_args()
-    print(json.dumps(run_smoke(args.indices, args.batch_size), indent=2, ensure_ascii=False))
+    print(
+        json.dumps(
+            run_smoke(
+                args.indices,
+                args.batch_size,
+                args.opt_model_name,
+                args.exec_model_name,
+            ),
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":

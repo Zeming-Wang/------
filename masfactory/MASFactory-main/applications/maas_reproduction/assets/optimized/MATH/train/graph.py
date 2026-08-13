@@ -59,7 +59,8 @@ class Workflow:
                     solutions.append(new_solution)
                 elif op_name == "Programmer":
                     result = await selected_operator(problem=problem, analysis=current_solution)
-                    new_solution = result['output']
+                    refined_solution = await self.custom(input=problem + f"\nCode output: {result['output']}", instruction=prompt_custom.REFINE_ANSWER_PROMPT)
+                    new_solution = refined_solution['response']
                     solutions.append(new_solution)
                 elif op_name == "ScEnsemble":
                     result = await selected_operator(problem=problem, solutions=solutions)

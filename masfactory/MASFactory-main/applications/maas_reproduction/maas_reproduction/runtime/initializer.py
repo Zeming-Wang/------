@@ -70,7 +70,11 @@ def build_runtime_attributes(
         "batch_scores": [],
         "batch_costs": [],
         "all_scores": [],
+        "current_repetition_scores": [],
+        "sample_results": [],
+        "result_columns": _default_result_columns(settings.dataset),
         "previous_cost": 0.0,
+        "previous_repetition_score": None,
         "batch_size": settings.optimizer.batch_size,
         "device": device,
         "run_directory": settings.run_directory,
@@ -118,3 +122,9 @@ def _load_operator_descriptions(settings) -> list[str]:
             f"{index}. {operator_name}: {operator_info['description']}, with interface {operator_info['interface']}."
         )
     return descriptions
+
+
+def _default_result_columns(dataset: str) -> list[str]:
+    if dataset == "HumanEval":
+        return ["inputs", "prediction", "expected_output", "score", "cost", "logprob"]
+    return ["question", "prediction", "expected_output", "score", "cost", "logprob"]

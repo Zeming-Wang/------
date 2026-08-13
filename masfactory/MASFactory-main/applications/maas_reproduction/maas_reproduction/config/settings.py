@@ -116,10 +116,19 @@ class MaASPaths:
         )
 
     def dataset_file(self, dataset: DatasetName, split: DatasetSplit) -> Path:
-        """Return the JSONL path for a dataset split."""
+        """Return the dataset path for a split.
+
+        The original MaAS MATH files use a ``.json`` extension even though
+        they contain one JSON object per line, while the migrated assets use
+        ``.jsonl``. Prefer the migrated path and fall back to the author path.
+        """
         _validate_dataset(dataset)
         _validate_split(split)
-        return self.data_root / f"{dataset.lower()}_{split}.jsonl"
+        jsonl_path = self.data_root / f"{dataset.lower()}_{split}.jsonl"
+        if jsonl_path.exists():
+            return jsonl_path
+        json_path = self.data_root / f"{dataset.lower()}_{split}.json"
+        return json_path
 
     def optimized_dataset_root(self, dataset: DatasetName) -> Path:
         """Return the optimized architecture root for a dataset."""
@@ -168,7 +177,7 @@ class MaASPaths:
             / f"{dataset}_controller_sample{sample}.pth"
         )
 
-# 负责优化参数 对应相关maas参数
+# 负责优化参数 对应相关maas参数，注意这里存在一个可能隐藏的bug即is_textgrad可能隐形的不被调用
 @dataclass(frozen=True)
 class OptimizerSettings:
     """Parameters controlling MaAS optimization and evaluation."""

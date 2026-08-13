@@ -24,6 +24,7 @@ def loss_update_forward(
     attributes.setdefault("batch_scores", []).append(score)
     attributes.setdefault("batch_costs", []).append(cost_delta)
     attributes.setdefault("all_scores", []).append(score)
+    attributes.setdefault("current_repetition_scores", []).append(score)
 
     loss_value = None
     update_performed = False
@@ -31,7 +32,7 @@ def loss_update_forward(
     settings = attributes["settings"]
 
     if len(attributes["batch_logprobs"]) >= batch_size:
-        if settings.mode == "Graph":
+        if getattr(settings, "mode", "Graph") == "Graph":
             loss = _compute_loss(attributes)
             loss_value = float(loss.detach().cpu().item())
             if loss.requires_grad:
@@ -43,9 +44,9 @@ def loss_update_forward(
             else:
                 logger.info("MaAS batch loss at problem %s has no gradient and update was skipped", input_data["problem_index"])
 
-        attributes["batch_logprobs"] = []
-        attributes["batch_scores"] = []
-        attributes["batch_costs"] = []
+        attributes["batch_logprobs"].clear()
+        attributes["batch_scores"].clear()
+        attributes["batch_costs"].clear()
 
     return {
         "result_score": score,
@@ -55,6 +56,36 @@ def loss_update_forward(
         "result_update_performed": update_performed,
         "result_problem_index": input_data["problem_index"],
     }
+
+
+def flush_remaining_batch(attributes: dict[str, object]) -> float | None:
+    """Force a loss update for any unprocessed batch samples, then clear the buffers.
+
+    This mirrors the original MaAS behavior where the last partial batch of each
+    repetition is always evaluated, rather than carried over to the next repetition.
+    Returns the loss value or ``None`` if the buffer was already empty.
+    """
+    settings = attributes["settings"]
+    if not attributes.get("batch_logprobs"):
+        return None
+    if getattr(settings, "mode", "Graph") != "Graph":
+        attributes["batch_logprobs"].clear()
+        attributes["batch_scores"].clear()
+        attributes["batch_costs"].clear()
+        return None
+    loss = _compute_loss(attributes)
+    loss_value = float(loss.detach().cpu().item())
+    if loss.requires_grad:
+        loss.backward()
+        attributes["optimizer"].step()
+        attributes["optimizer"].zero_grad()
+        logger.info("MaAS controller updated at repetition boundary with loss %.6f", loss_value)
+    else:
+        logger.info("MaAS batch loss at repetition boundary has no gradient and was skipped")
+    attributes["batch_logprobs"].clear()
+    attributes["batch_scores"].clear()
+    attributes["batch_costs"].clear()
+    return loss_value
 
 
 def _compute_loss(attributes: dict[str, object]) -> torch.Tensor:

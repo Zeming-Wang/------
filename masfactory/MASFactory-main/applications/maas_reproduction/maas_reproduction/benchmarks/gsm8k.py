@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-
+#即整个gsm8k的评测原则，提取最后一个数字然后判分
 class GSM8KScorer:
     def extract_number(self, text: str) -> float | None:
         matches = re.findall(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?|\d+\.\d+", str(text))

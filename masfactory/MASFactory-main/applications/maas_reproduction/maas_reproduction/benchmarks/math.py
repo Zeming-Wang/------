@@ -6,7 +6,7 @@ import re
 from math import isclose
 from typing import Any
 
-
+#判断math两个结果是否相同，有可能存在的问题，比如失败的原因不明确就记为0分
 class MATHScorer:
     def extract_model_answer(self, text: str) -> str:
         pattern = r"\\boxed{((?:[^{}]|{[^{}]*})*)}"

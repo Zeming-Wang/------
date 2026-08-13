@@ -3,7 +3,11 @@ from types import SimpleNamespace
 import asyncio
 import unittest
 
-from maas_reproduction.nodes.architecture_exec_node import architecture_exec_forward
+from maas_reproduction.nodes.architecture_exec_node import (
+    _MAAS_WORKFLOW_MAX_RETRIES,
+    _MAAS_WORKFLOW_TIMEOUT_SECONDS,
+    architecture_exec_forward,
+)
 
 
 class MathWorkflow:
@@ -46,6 +50,10 @@ class FailingWorkflow:
 
 
 class ArchitectureExecNodeTest(unittest.TestCase):
+    def test_uses_bounded_smoke_timeout_and_retry_defaults(self) -> None:
+        self.assertEqual(_MAAS_WORKFLOW_TIMEOUT_SECONDS, 200)
+        self.assertEqual(_MAAS_WORKFLOW_MAX_RETRIES, 2)
+
     def test_runs_math_workflow_and_preserves_problem_fields(self) -> None:
         workflow = MathWorkflow()
         attributes = {

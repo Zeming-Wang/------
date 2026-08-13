@@ -12,11 +12,11 @@ import logging
 
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
 
-from maas_reproduction.runtime import AsyncRunnerContextError, run_async_once
+from maas_reproduction.runtime.async_runner import AsyncRunnerContextError, run_async_once
 
 logger = logging.getLogger(__name__)
-_MAAS_WORKFLOW_TIMEOUT_SECONDS = 1500
-_MAAS_WORKFLOW_MAX_RETRIES = 20
+_MAAS_WORKFLOW_TIMEOUT_SECONDS = 200
+_MAAS_WORKFLOW_MAX_RETRIES = 2
 
 
 async def _call_workflow(workflow, *args):

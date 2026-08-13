@@ -36,7 +36,7 @@ Instruction:
 Analyze the above solution for any errors or suboptimal aspects. Make iterative improvements to enhance its correctness and efficiency. Provide the refined solution below.
 """
 
-GENERATE_COT_PROMPT = """
+GENERATE_COT_PROMPT = r"""
 Mathematical Reasoning Instruction
 {instruction}
 
@@ -52,15 +52,15 @@ Demonstration Examples (GSM8K/MATH style):
    Factorization: $(y-4)(y+1)=0$ 鈫?$y=4$ or $y=-1$  
    Since $y=x^2 \geq 0$, discard $y=-1$  
    Solve $x^2=4$ 鈫?$x=\pm 2$  
-   \boxed{-2}, \boxed{2}
+   \boxed{{-2}}, \boxed{{2}}
 
 2. Problem: Cone with height 12cm, radius 6cm. Find volume.
    Analysis:
-   Volume formula: $V = \frac{1}{3}\pi r^2 h$  
-   Substitute values: $V = \frac{1}{3}\pi(6)^2(12)$  
+   Volume formula: $V = \frac{{1}}{{3}}\pi r^2 h$  
+   Substitute values: $V = \frac{{1}}{{3}}\pi(6)^2(12)$  
    Calculate: $6^2=36$ 鈫?$36\times12=432$  
-   Final volume: $\frac{432}{3}\pi = 144\pi$  
-   \boxed{144\pi}
+   Final volume: $\frac{{432}}{{3}}\pi = 144\pi$  
+   \boxed{{144\pi}}
 
 
 Solution Protocol:
