@@ -25,7 +25,7 @@ class GraphOptimize(BaseModel):
 
 
 class Optimizer:
-    def __init__(
+    def __init__(   
         self,
         dataset: DatasetType,
         question_type: QuestionType,
@@ -58,7 +58,7 @@ class Optimizer:
         self.evaluation_utils = EvaluationUtils(self.root_path)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.controller = MultiLayerController(device=self.device).to(self.device)
-        
+        #将控制器实例化 
         self.optimizer = torch.optim.Adam(self.controller.parameters(), lr=self.lr)          
 
     def optimize(self, mode: OptimizerType = "Graph"):
@@ -98,11 +98,13 @@ class Optimizer:
         
         time.sleep(5)
 
+    #是整个训练的主循环
     async def _optimize_graph_maas(self):
         graph_path = f"{self.root_path}/train"
         data = self.data_utils.load_results(graph_path)
 
         operator_descriptions = self.graph_utils.load_operators_description_maas(self.operators) 
+        #将自然语言转为Tensor向量，并存入GPU 算子向量化 对应公式9
         precomputed_operator_embeddings = torch.stack([get_sentence_embedding(op_desc) for op_desc in operator_descriptions]).to(self.device)
         directory = self.graph_utils.create_round_directory(graph_path, self.round)
         logger.info(directory)
@@ -122,6 +124,8 @@ class Optimizer:
         avg_score = await self.evaluation_utils.evaluate_graph_maas(self, directory, data, initial=False, params=params)
 
         return avg_score
+    
+        #异步执行一轮完整的多智能体采样执行与梯度更新
 
     async def test(self):
         data = []
@@ -136,6 +140,7 @@ class Optimizer:
         self.graph = self.graph_utils.load_graph_maas(graph_path)
         directory = self.graph_utils.create_round_directory(graph_path, self.round)
 
+        #加载已经训练好的权重即整个训练成果 并设为评估模式
         pth_path = f"{self.root_path}/train"
         pth_directory = self.graph_utils.create_round_directory(pth_path, self.round)
         controller_path = os.path.join(pth_directory,  f"{self.dataset}_controller_sample{self.sample}.pth")

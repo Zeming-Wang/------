@@ -6,6 +6,7 @@ from maas.ext.maas.benchmark.experiment_configs import EXPERIMENT_CONFIGS
 def parse_args():
     parser = argparse.ArgumentParser(description="MAAS Optimizer")
     parser.add_argument(
+        #定义了数据集来源
         "--dataset",
         type=str,
         choices=list(EXPERIMENT_CONFIGS.keys()),
@@ -19,6 +20,8 @@ def parse_args():
         default="maas/ext/maas/scripts/optimized",
         help="Optimized result save path",
     )
+    
+    #定义了一些超参数和模型
     parser.add_argument("--round", type=int, default=1, help="choice the round of optimized")
     parser.add_argument("--batch_size", type=int, default=4, help="Train batch size")
     parser.add_argument(
@@ -33,6 +36,9 @@ def parse_args():
         default="gpt-4o-mini",
         help="Specifies the name of the model used for execution tasks.",
     )
+    
+    #算法开关
+    
     parser.add_argument("--is_test",type=bool, default=False, help="choice the optimizer mode")
     parser.add_argument("--is_textgrad", type = bool, default=False, help="choice to use textgrad")
     parser.add_argument("--lr", type=float, default=0.01, help="learning rate")
@@ -41,7 +47,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    config = EXPERIMENT_CONFIGS[args.dataset]
+    config = EXPERIMENT_CONFIGS[args.dataset] #获取对应数据集和算子库和问题类型
 
     models_config = ModelsConfig.default()
     opt_llm_config = models_config.get(args.opt_model_name)
@@ -71,6 +77,7 @@ if __name__ == "__main__":
         lr=args.lr,
         is_textgrad=args.is_textgrad,
     )
+    #将相关的超参数传入到optimizer之中
 
     if args.is_test:
         optimizer.optimize("Test")      

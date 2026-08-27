@@ -16,9 +16,10 @@ def loss_update_forward(
     score = float(input_data["score"])
     cost = float(input_data["cost"])
     logprob = input_data["logprob"]
-    previous_cost = float(attributes.get("previous_cost", 0.0))
+    prev = attributes.setdefault("previous_cost", [0.0])
+    previous_cost = float(prev[0])
     cost_delta = cost - previous_cost
-    attributes["previous_cost"] = cost
+    prev[0] = cost
 
     attributes.setdefault("batch_logprobs", []).append(_as_logprob_tensor(logprob, attributes))
     attributes.setdefault("batch_scores", []).append(score)
@@ -58,6 +59,9 @@ def loss_update_forward(
     }
 
 
+    
+
+    
 def flush_remaining_batch(attributes: dict[str, object]) -> float | None:
     """Force a loss update for any unprocessed batch samples, then clear the buffers.
 

@@ -44,7 +44,7 @@ class RuntimeInitializerTest(unittest.TestCase):
         self.assertEqual(attrs["batch_size"], 2)
         self.assertEqual(attrs["problem_index"], 0)
         self.assertEqual(attrs["repetition"], 1)
-        self.assertEqual(attrs["previous_cost"], 0.0)
+        self.assertEqual(attrs["previous_cost"], [0.0])
         self.assertEqual(tuple(attrs["operator_embeddings"].shape), (2, 384))
         self.assertEqual(attrs["architecture_workflow"].dataset, "GSM8K")
         self.assertIs(attrs["architecture_workflow"].controller, attrs["controller"])

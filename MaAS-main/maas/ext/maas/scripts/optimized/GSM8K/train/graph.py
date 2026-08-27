@@ -37,7 +37,7 @@ class Workflow:
         
         current_solution = "" 
         solutions = []
-        sum_log_prob = 0.0
+        sum_log_prob = torch.tensor(0.0, device=self.device)
 
         for layer_idx, selected_names in enumerate(selected_names_layers):
             for op_name in selected_names:
@@ -76,7 +76,7 @@ class Workflow:
 
                 current_solution = new_solution
 
-            sum_log_prob += log_probs_layers[layer_idx].item()
+            sum_log_prob = sum_log_prob + log_probs_layers[layer_idx]
 
         if len(solutions) > 1:
             final_solution = await self.sc_ensemble(solutions=solutions, problem=problem)

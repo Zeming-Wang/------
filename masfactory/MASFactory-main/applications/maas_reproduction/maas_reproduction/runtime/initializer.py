@@ -73,7 +73,7 @@ def build_runtime_attributes(
         "current_repetition_scores": [],
         "sample_results": [],
         "result_columns": _default_result_columns(settings.dataset),
-        "previous_cost": 0.0,
+        "previous_cost": [0.0],
         "previous_repetition_score": None,
         "batch_size": settings.optimizer.batch_size,
         "device": device,

@@ -17,6 +17,7 @@ class OperatorSelector(torch.nn.Module):
             self.operator_encoder = torch.nn.Linear(input_dim * 2, hidden_dim)
         self.query_encoder = torch.nn.Linear(input_dim, hidden_dim)
 
+    #实现了两层东西，第一层是输入，第二层是上一层算子
     def forward(self, query_embed: torch.Tensor, operators_embed: torch.Tensor, prev_operators_embed: torch.Tensor = None):
         if query_embed.dim() == 1:
             query_embed = query_embed.unsqueeze(0)

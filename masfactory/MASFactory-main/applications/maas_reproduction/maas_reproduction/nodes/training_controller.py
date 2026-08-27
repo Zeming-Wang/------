@@ -21,7 +21,11 @@ def training_controller(input_data: dict[str, object], attributes: dict[str, obj
     problems = attributes["problems"]
     problem_index = int(attributes.get("problem_index", 0))
     repetition = int(attributes.get("repetition", 1))
-    max_repetitions = int(settings.optimizer.sample)
+    # Test mode always evaluates the full dataset exactly once; only Graph
+    # training repeats the whole dataset `sample` times.
+    max_repetitions = (
+        1 if getattr(settings, "mode", "Graph") == "Test" else int(settings.optimizer.sample)
+    )
 
     if problem_index >= len(problems):
         from maas_reproduction.nodes.loss_update_node import flush_remaining_batch

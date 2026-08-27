@@ -38,7 +38,7 @@ class LossUpdateNodeTest(unittest.TestCase):
             "batch_scores": [],
             "batch_costs": [],
             "all_scores": [],
-            "previous_cost": 0.0,
+            "previous_cost": [0.0],
             "optimizer": optimizer,
             "device": torch.device("cpu"),
         }
@@ -68,7 +68,7 @@ class LossUpdateNodeTest(unittest.TestCase):
             "batch_scores": [],
             "batch_costs": [],
             "all_scores": [],
-            "previous_cost": 0.0,
+            "previous_cost": [0.0],
             "optimizer": optimizer,
             "device": torch.device("cpu"),
         }
@@ -91,7 +91,7 @@ class LossUpdateNodeTest(unittest.TestCase):
             "batch_scores": [],
             "batch_costs": [],
             "all_scores": [],
-            "previous_cost": 0.0,
+            "previous_cost": [0.0],
             "optimizer": optimizer,
             "device": torch.device("cpu"),
         }

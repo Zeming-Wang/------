@@ -60,7 +60,10 @@ class GSM8KBenchmark(BaseBenchmark):
             return input_text, output, expected_output, score, cost, logprob
 
         except Exception as e:
-            logger.info(f"Maximum retries reached. Skipping this sample. Error: {e}")
+            logger.exception(
+                f"Maximum retries reached. Skipping this GSM8K sample. "
+                f"Error: {type(e).__name__}: {e}"
+            )
             return input_text, str(e), expected_output, 0.0, 0.0, torch.tensor(0.0, dtype=torch.float32, device=self.device)
 
     def get_result_columns(self) -> List[str]:
