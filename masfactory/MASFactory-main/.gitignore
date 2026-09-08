@@ -140,6 +140,8 @@ third_party/
 masfactory-visualizer/test/**
 masfactory-visualizer/test/
 **/tests/
+!applications/maas_reproduction/tests/
+!applications/maas_reproduction/tests/*.py
 **/output/
 
 simplified_chatdev_*/
