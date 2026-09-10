@@ -1,7 +1,7 @@
-"""Compatibility imports for state schemas.
+"""State-schema import seam for the MaAS reproduction application.
 
 Task 1 keeps one implementation in :mod:`maas_reproduction.schemas`; this
-module only preserves the state-oriented import seam documented by the app.
+module exposes the state-oriented subset used by dispatch components.
 """
 
 from .schemas import ArchitectureRequest, DispatchState, RouteItem, RoutePlan

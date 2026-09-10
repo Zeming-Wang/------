@@ -1,8 +1,7 @@
-"""Immutable message and state schemas for the MaAS reproduction.
+"""Immutable schemas at the planning, execution, evaluation, and training seams.
 
-The schemas form the application seam between planning, execution, evaluation,
-and training.  They validate only the frozen reproduction contract; operator-
-specific payloads and framework runtime objects stay outside this module.
+The module validates only the contracts frozen for Tasks 0 and 1.  Operator-
+specific payloads and MASFactory runtime objects deliberately stay outside it.
 """
 
 from __future__ import annotations
@@ -13,16 +12,15 @@ from enum import Enum
 from numbers import Real
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, TypeAlias
 
-from .contracts import TRAINING_SKIP_REASONS
+from .contracts import EARLY_STOP_OPERATOR, TRAINING_SKIP_REASONS
 
 if TYPE_CHECKING:
     from torch import Tensor
 
     PolicyLogProb: TypeAlias = Tensor
 else:
-    # Torch is an application/runtime dependency, not a schema import-time
-    # dependency.  Values are deliberately carried through without inspection
-    # so validation can never detach or otherwise alter the autograd graph.
+    # Do not import torch merely to construct message schemas.  The live value
+    # is carried through by identity so validation cannot detach autograd.
     PolicyLogProb: TypeAlias = Any
 
 
@@ -102,7 +100,7 @@ def _failure_source(value: object) -> FailureSource | None:
 
 @dataclass(frozen=True, slots=True)
 class ArchitectureRequest:
-    """Execution-only sample input; expected answers cannot cross this seam."""
+    """Execution-only sample input; an expected answer cannot cross this seam."""
 
     problem: str
     problem_index: int
@@ -117,7 +115,7 @@ class ArchitectureRequest:
 
 @dataclass(frozen=True, slots=True)
 class EvaluationContext:
-    """Evaluator-only input; the sole schema allowed to carry an answer key."""
+    """Evaluator-only input and the sole schema allowed to carry an answer key."""
 
     problem: str
     problem_index: int
@@ -133,7 +131,7 @@ class EvaluationContext:
 
 @dataclass(frozen=True, slots=True)
 class RouteItem:
-    """One operator or control marker in the flattened policy route."""
+    """One operator or deterministic control marker in a flattened route."""
 
     sequence_index: int
     layer_index: int
@@ -147,7 +145,7 @@ class RouteItem:
         _require_non_negative_int(self.position, "position")
         _require_non_empty_text(self.operator_name, "operator_name")
         _require_bool(self.is_control_marker, "is_control_marker")
-        is_early_stop = self.operator_name == "EarlyStop"
+        is_early_stop = self.operator_name == EARLY_STOP_OPERATOR
         if self.is_control_marker != is_early_stop:
             raise ValueError("EarlyStop is the only control marker and must be marked")
 
@@ -163,11 +161,28 @@ class RoutePlan:
         if isinstance(self.items, (str, bytes)) or not isinstance(self.items, Sequence):
             raise TypeError("items must be a sequence of RouteItem values")
         normalized_items = tuple(self.items)
+        current_layer = -1
+        expected_position = 0
         for index, item in enumerate(normalized_items):
             if not isinstance(item, RouteItem):
                 raise TypeError("every route item must be a RouteItem")
             if item.sequence_index != index:
                 raise ValueError("RouteItem.sequence_index must be contiguous from zero")
+            if item.layer_index == current_layer:
+                if item.position != expected_position:
+                    raise ValueError(
+                        "RoutePlan positions must be contiguous within each layer"
+                    )
+            elif item.layer_index == current_layer + 1:
+                current_layer = item.layer_index
+                expected_position = 0
+                if item.position != expected_position:
+                    raise ValueError(
+                        "RoutePlan positions must start at zero for each layer"
+                    )
+            else:
+                raise ValueError("RoutePlan items must be layer-major with no gaps")
+            expected_position += 1
         if self.policy_log_prob is None:
             raise ValueError("policy_log_prob is required for a valid RoutePlan")
         object.__setattr__(self, "items", normalized_items)
@@ -292,8 +307,8 @@ class ArchitectureResult:
         object.__setattr__(self, "failure_source", _failure_source(self.failure_source))
         _require_bool(self.result_valid, "result_valid")
         _require_bool(self.cost_reliable, "cost_reliable")
-        if self.result_valid and self.prediction is None:
-            raise ValueError("a valid architecture result requires a prediction")
+        if self.result_valid and (self.prediction is None or not self.prediction.strip()):
+            raise ValueError("a valid architecture result requires a non-empty prediction")
         if self.cost_reliable and (normalized_cost is None or normalized_cost < 0.0):
             raise ValueError("reliable cost requires a finite, non-negative cost_delta")
         object.__setattr__(
@@ -308,7 +323,7 @@ class ArchitectureResult:
 
 @dataclass(frozen=True, slots=True)
 class EvaluationResult:
-    """Architecture result enriched with a dataset score and its reliability."""
+    """Architecture result enriched with a dataset score and reliability."""
 
     problem_index: int
     prediction: str | None
@@ -333,8 +348,8 @@ class EvaluationResult:
         _require_bool(self.result_valid, "result_valid")
         _require_bool(self.cost_reliable, "cost_reliable")
         _require_bool(self.evaluation_reliable, "evaluation_reliable")
-        if self.result_valid and self.prediction is None:
-            raise ValueError("a valid architecture result requires a prediction")
+        if self.result_valid and (self.prediction is None or not self.prediction.strip()):
+            raise ValueError("a valid architecture result requires a non-empty prediction")
         if self.cost_reliable and (normalized_cost is None or normalized_cost < 0.0):
             raise ValueError("reliable cost requires a finite, non-negative cost_delta")
         if self.evaluation_reliable:
@@ -373,7 +388,7 @@ class TrainingSignal:
 
 @dataclass(frozen=True, slots=True)
 class SampleResult:
-    """Detached, serializable per-sample result retained by DatasetRunner."""
+    """Detached, JSON-ready per-sample result retained by DatasetRunner."""
 
     problem_index: int
     prediction: str | None
@@ -412,15 +427,15 @@ class SampleResult:
         _require_bool(self.evaluation_reliable, "evaluation_reliable")
         _require_bool(self.update_performed, "update_performed")
         _require_optional_text(self.skip_reason, "skip_reason")
-        if self.result_valid and self.prediction is None:
-            raise ValueError("a valid architecture result requires a prediction")
+        if self.result_valid and (self.prediction is None or not self.prediction.strip()):
+            raise ValueError("a valid architecture result requires a non-empty prediction")
         if self.cost_reliable and (normalized_cost is None or normalized_cost < 0.0):
             raise ValueError("reliable cost requires a finite, non-negative cost_delta")
         if self.evaluation_reliable and (not self.result_valid or normalized_score is None):
             raise ValueError("reliable evaluation requires a valid result and finite score")
 
     def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-ready public record containing no policy Tensor."""
+        """Return a public record containing no live policy Tensor."""
 
         return {
             "problem_index": self.problem_index,

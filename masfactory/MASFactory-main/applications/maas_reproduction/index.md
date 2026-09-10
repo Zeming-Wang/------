@@ -1,28 +1,5 @@
 # MASFactory 原生 MaAS 复现目录与职责
 
-
-## 顶层执行结构
-
-```text
-DatasetRunner
-└── RootGraph.invoke(one_sample)
-    ├── InputSplitNode
-    ├── ArchitectureExecGraph
-    │   ├── InitializeExecutionNode
-    │   ├── RoutePlannerNode
-    │   ├── NativeBootstrapGraph
-    │   ├── OperatorDispatchLoop
-    │   ├── BenchmarkCompletionGraph
-    │   └── FinalizeArchitectureResultNode
-    ├── EvaluatorNode
-    ├── LossUpdateNode / MetricsNode
-    └── SampleResultNode
-```
-
-`BenchmarkCompletionGraph` 只承接原 MaAS 各数据集的确定性后置路径。它不修改策略生成的 `RoutePlan` 或 `policy_log_prob`，也不把 operator 执行塞入 Finalize。
-
-## 完整目录树与职责
-
 ```text
 applications/maas_reproduction/                         # MaAS 原生复现应用根目录；隔离实验代码与 MASFactory 框架代码
 ├── __init__.py                                         # 将应用根目录声明为 Python 包；不在导入阶段构图或启动实验
@@ -30,7 +7,6 @@ applications/maas_reproduction/                         # MaAS 原生复现应�
 ├── workflow.py                                         # 构建 TrainRootGraph 和 TestRootGraph；只装配顶层 Graph、Node 和 Edge
 ├── README.md                                           # 面向使用者的安装、配置、训练、测试和产物说明
 ├── .env.example                                        # 环境变量名称模板；不得保存真实 API key 或其他凭据
-├── pytest.ini                                          # 隔离本应用测试发现路径，避免与外层同名目录冲突
 ├── agent.md                                            # 当前目录的工程开发约束
 ├── index.md                                            # 本目录树、模块职责、消息契约和实现索引
 ├── maas_reproduction_spec.md                           # MASFactory 原生 MaAS 最终实施方案
@@ -113,7 +89,6 @@ applications/maas_reproduction/                         # MaAS 原生复现应�
 │
 ├── maas_reproduction/                                 # 与具体图结构解耦的领域、策略、训练和运行实现
 │   ├── __init__.py                                     # 导出应用稳定 interface；不触发运行时副作用
-│   ├── contracts.py                                    # 冻结 operator 顺序、bootstrap、EarlyStop、logprob、utility 与 policy loss 口径
 │   ├── schemas.py                                      # ArchitectureRequest/Result、OperatorInvocation/Result、EvaluationResult 等不可变契约
 │   ├── state.py                                        # 兼容导出 RouteItem、RoutePlan、DispatchState；实现统一位于 schemas.py
 │   ├── reducers.py                                     # DispatchState 的纯 reducer；集中候选、错误、终止和 cursor 规则
@@ -167,7 +142,6 @@ applications/maas_reproduction/                         # MaAS 原生复现应�
 └── tests/                                             # 通过正式 interface 验证领域规则、节点、图结构和端到端行为
     ├── __init__.py                                     # 将应用测试声明为包
     ├── unit/                                          # 不调用真实网络的纯函数、节点和 adapter 测试
-    │   ├── test_contracts.py                           # operator/bootstrap 顺序及 logprob、utility、policy loss 冻结值
     │   ├── test_schemas.py                             # 类型约束、不可变性、序列化和非法字段
     │   ├── test_route_planner.py                       # 分层展开、sequence_index、EarlyStop 和 logprob 聚合
     │   ├── test_dispatch_termination.py                # cursor/termination_requested 的 Loop 终止真值表

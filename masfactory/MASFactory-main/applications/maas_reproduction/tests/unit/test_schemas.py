@@ -20,14 +20,14 @@ from maas_reproduction.schemas import (
 )
 
 
-POLICY_TENSOR = object()
+POLICY_VALUE = object()
 
 
 def route_plan(*items: RouteItem) -> RoutePlan:
-    return RoutePlan(items=items, policy_log_prob=POLICY_TENSOR)
+    return RoutePlan(items=items, policy_log_prob=POLICY_VALUE)
 
 
-def test_architecture_request_is_minimal_and_frozen() -> None:
+def test_request_is_minimal_and_frozen() -> None:
     request = ArchitectureRequest(problem="2 + 2?", problem_index=0)
 
     assert [item.name for item in fields(request)] == [
@@ -42,9 +42,7 @@ def test_architecture_request_is_minimal_and_frozen() -> None:
 
 def test_expected_answer_is_confined_to_evaluation_context() -> None:
     context = EvaluationContext(
-        problem="2 + 2?",
-        problem_index=0,
-        expected_answer="4",
+        problem="2 + 2?", problem_index=0, expected_answer="4"
     )
     invocation = OperatorInvocation(
         sequence_index=0,
@@ -58,7 +56,7 @@ def test_expected_answer_is_confined_to_evaluation_context() -> None:
     assert not hasattr(invocation, "expected_answer")
 
 
-def test_route_plan_requires_contiguous_layer_major_sequence_indices() -> None:
+def test_route_plan_normalizes_items_and_preserves_live_policy_value() -> None:
     plan = route_plan(
         RouteItem(0, 0, 0, "Generate"),
         RouteItem(1, 0, 1, "Programmer"),
@@ -66,10 +64,15 @@ def test_route_plan_requires_contiguous_layer_major_sequence_indices() -> None:
     )
 
     assert tuple(item.sequence_index for item in plan.items) == (0, 1, 2)
-    assert plan.policy_log_prob is POLICY_TENSOR
+    assert plan.policy_log_prob is POLICY_VALUE
+    assert isinstance(RoutePlan(items=[], policy_log_prob=POLICY_VALUE).items, tuple)
 
     with pytest.raises(ValueError, match="contiguous"):
         route_plan(RouteItem(1, 0, 0, "Generate"))
+    with pytest.raises(ValueError, match="layer-major"):
+        route_plan(RouteItem(0, 1, 0, "Generate"), RouteItem(1, 0, 1, "SelfRefine"))
+    with pytest.raises(ValueError, match="no gaps"):
+        route_plan(RouteItem(0, 0, 0, "Generate"), RouteItem(1, 2, 0, "SelfRefine"))
 
 
 def test_early_stop_is_the_only_control_marker() -> None:
@@ -82,7 +85,7 @@ def test_early_stop_is_the_only_control_marker() -> None:
         RouteItem(0, 0, 0, "EarlyStop")
 
 
-def test_dispatch_state_has_only_frozen_minimal_fields() -> None:
+def test_dispatch_state_contains_only_the_frozen_minimal_fields() -> None:
     state = DispatchState(
         request=ArchitectureRequest("problem", 3),
         route_plan=route_plan(),
@@ -116,7 +119,7 @@ def test_recoverable_timeout_is_a_legal_operator_result() -> None:
     assert result.execution_output == "timeout"
 
 
-def test_cost_result_requires_an_explicit_reliability_explanation() -> None:
+def test_cost_result_requires_explicit_reliability() -> None:
     assert CostResult(value=0.2, reliable=True).value == 0.2
     unreliable = CostResult(value=-0.1, reliable=False, error="negative delta")
     assert unreliable.error == "negative delta"
@@ -125,11 +128,11 @@ def test_cost_result_requires_an_explicit_reliability_explanation() -> None:
         CostResult(value=None, reliable=False)
 
 
-def test_valid_architecture_result_can_retain_failure_attribution() -> None:
+def test_valid_architecture_result_retains_failure_attribution_and_policy_value() -> None:
     result = ArchitectureResult(
         prediction="fallback answer",
         cost_delta=0.25,
-        policy_log_prob=POLICY_TENSOR,
+        policy_log_prob=POLICY_VALUE,
         status="recoverable_failure",
         failure_source=FailureSource.ROUTE_EXECUTION,
         result_valid=True,
@@ -137,16 +140,18 @@ def test_valid_architecture_result_can_retain_failure_attribution() -> None:
     )
 
     assert result.failure_source is FailureSource.ROUTE_EXECUTION
-    assert result.policy_log_prob is POLICY_TENSOR
+    assert result.policy_log_prob is POLICY_VALUE
 
 
 @pytest.mark.parametrize("cost", [None, -0.01, float("inf"), float("nan")])
-def test_reliable_cost_rejects_missing_negative_or_non_finite_delta(cost: float | None) -> None:
+def test_reliable_cost_rejects_missing_negative_or_non_finite_delta(
+    cost: float | None,
+) -> None:
     with pytest.raises(ValueError):
         ArchitectureResult(
             prediction="answer",
             cost_delta=cost,
-            policy_log_prob=POLICY_TENSOR,
+            policy_log_prob=POLICY_VALUE,
             status="success",
             failure_source=None,
             result_valid=True,
@@ -154,11 +159,11 @@ def test_reliable_cost_rejects_missing_negative_or_non_finite_delta(cost: float 
         )
 
 
-def test_unreliable_cost_may_retain_diagnostic_delta() -> None:
+def test_unreliable_cost_can_retain_diagnostic_delta() -> None:
     result = ArchitectureResult(
         prediction="answer",
         cost_delta=-0.25,
-        policy_log_prob=POLICY_TENSOR,
+        policy_log_prob=POLICY_VALUE,
         status="cost_error",
         failure_source=FailureSource.INFRASTRUCTURE,
         result_valid=True,
@@ -174,7 +179,7 @@ def test_reliable_evaluation_requires_valid_result_and_finite_score() -> None:
             prediction="answer",
             score=None,
             cost_delta=0.1,
-            policy_log_prob=POLICY_TENSOR,
+            policy_log_prob=POLICY_VALUE,
             status="success",
             failure_source=None,
             result_valid=True,
@@ -186,9 +191,7 @@ def test_reliable_evaluation_requires_valid_result_and_finite_score() -> None:
 def test_training_signal_states_are_coherent() -> None:
     update = TrainingSignal(should_update=True, utility=0.7, skip_reason=None)
     skip = TrainingSignal(
-        should_update=False,
-        utility=None,
-        skip_reason="unreliable_cost",
+        should_update=False, utility=None, skip_reason="unreliable_cost"
     )
     assert update.utility == 0.7
     assert skip.skip_reason == "unreliable_cost"
@@ -235,7 +238,7 @@ def test_sample_result_rejects_non_scalar_logprob_value() -> None:
             result_valid=False,
             cost_reliable=False,
             evaluation_reliable=False,
-            policy_log_prob_value=POLICY_TENSOR,  # type: ignore[arg-type]
+            policy_log_prob_value=POLICY_VALUE,  # type: ignore[arg-type]
             utility=None,
             update_performed=False,
             skip_reason="invalid_architecture_result",
