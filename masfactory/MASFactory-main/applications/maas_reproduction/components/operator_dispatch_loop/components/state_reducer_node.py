@@ -1,1 +1,65 @@
+"""The sole state transition seam in the operator dispatch loop."""
 
+from __future__ import annotations
+
+from collections.abc import Mapping
+
+from masfactory.components.custom_node import CustomNode
+
+from maas_reproduction.schemas import DispatchState, OperatorResult
+
+
+def reduce_result(previous: DispatchState, result: OperatorResult) -> DispatchState:
+    """Return a new state after one operator result; never mutate ``previous``."""
+    if not isinstance(previous, DispatchState):
+        raise TypeError("previous must be a DispatchState")
+    if not isinstance(result, OperatorResult):
+        raise TypeError("result must be an OperatorResult")
+
+    candidates = list(previous.candidates)
+    for candidate in result.candidates:
+        if candidate not in candidates:
+            candidates.append(candidate)
+    if result.solution is not None and result.solution not in candidates:
+        candidates.append(result.solution)
+
+    error_state = previous.error_state
+    if result.status not in {"success", "ok", "completed"}:
+        error_state = {
+            **(previous.error_state or {}),
+            "operator_name": result.operator_name,
+            "status": result.status,
+            **result.metadata,
+        }
+
+    terminate = previous.termination_requested or result.operator_name == "EarlyStop"
+    if result.metadata.get("termination_requested") is True:
+        terminate = True
+
+    return DispatchState(
+        request=previous.request,
+        route_plan=previous.route_plan,
+        route_cursor=previous.route_cursor + 1,
+        current_solution=(result.solution if result.solution is not None else previous.current_solution),
+        candidates=tuple(candidates),
+        termination_requested=terminate,
+        error_state=error_state,
+    )
+
+
+def reduce_operator_result(message: dict, attributes: dict) -> dict:
+    previous = message.get("dispatch_state", attributes.get("dispatch_state"))
+    return {"dispatch_state": reduce_result(previous, message["operator_result"])}
+
+
+class StateReducerNode(CustomNode):
+    def __init__(self, name: str = "state_reducer") -> None:
+        super().__init__(
+            name=name,
+            forward=reduce_operator_result,
+            pull_keys={"dispatch_state": "Current dispatch state."},
+            push_keys={"dispatch_state": "Current dispatch state."},
+        )
+
+
+__all__ = ["StateReducerNode", "reduce_operator_result", "reduce_result"]

@@ -16,60 +16,122 @@ from maas_reproduction.maas_reproduction.schemas import (
 
 
 class BootstrapResultNode(CustomNode):
-    """Convert bootstrap operator outputs into the minimal ``DispatchState``."""
+    """Reduce bootstrap operator results into the canonical DispatchState."""
 
-    def __init__(self, name: str = "BootstrapResultNode", *, dataset: str = "MATH", **kwargs: Any) -> None:
+    def __init__(
+        self,
+        name: str = "BootstrapResultNode",
+        *,
+        dataset: str = "MATH",
+        **kwargs: Any,
+    ) -> None:
         self.dataset = dataset
-        super().__init__(name, forward=self._forward_bootstrap, **kwargs)
+
+        super().__init__(
+            name,
+            forward=self._forward_bootstrap,
+            pull_keys={},
+            push_keys={},
+            **kwargs,
+        )
 
     @staticmethod
-    def _solution(result: OperatorResult | None) -> str | None:
+    def _solution(
+        result: OperatorResult | None,
+    ) -> str | None:
         if result is None:
             return None
-        return result.solution or (result.candidates[0] if result.candidates else result.code)
 
-    def _forward_bootstrap(self, data: dict[str, Any]) -> dict[str, Any]:
+        if result.solution:
+            return result.solution
+
+        if result.candidates:
+            return result.candidates[0]
+
+        return result.code
+
+    @staticmethod
+    def _failure(
+        message: str,
+        *,
+        stage: str = "bootstrap",
+    ) -> dict[str, Any]:
+        return {
+            "stage": stage,
+            "error_type": "bootstrap_failure",
+            "message": message,
+        }
+
+    def _forward_bootstrap(
+        self,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
         request = data.get("request")
         route_plan = data.get("route_plan")
-        if request is None or route_plan is None:
+        programmer_result = data.get("programmer_result")
+        generate_result = data.get("generate_result")
+        bootstrap_error = data.get("bootstrap_error")
+
+        if not isinstance(request, ArchitectureRequest):
             return {
                 "dispatch_state": None,
                 "failure_source": FailureSource.BOOTSTRAP.value,
-                "error_state": {"error": "missing request or route_plan"},
-            }
-        programmer = data.get("programmer_result")
-        generated = data.get("generate_result")
-        if data.get("programmer_error"):
-            return {
-                "dispatch_state": None,
-                "failure_source": FailureSource.BOOTSTRAP.value,
-                "error_state": {"error": data["programmer_error"]},
-            }
-        if isinstance(programmer, dict):
-            programmer = None
-        if isinstance(generated, dict):
-            generated = None
-        if self.dataset not in ("MATH", "math"):
-            return {
-                "dispatch_state": DispatchState(
-                    request=request,
-                    route_plan=route_plan,
-                    route_cursor=0,
-                    current_solution=None,
-                    candidates=(),
-                    termination_requested=False,
-                    error_state=None,
+                "error_state": self._failure(
+                    "missing or invalid ArchitectureRequest",
+                    stage="bootstrap",
                 ),
+            }
+
+        if not isinstance(route_plan, RoutePlan):
+            return {
+                "dispatch_state": None,
+                "failure_source": FailureSource.BOOTSTRAP.value,
+                "error_state": self._failure(
+                    "missing or invalid RoutePlan",
+                    stage="bootstrap",
+                ),
+            }
+
+        # Non-MATH datasets are explicitly outside this native bootstrap path.
+        # The graph still returns a valid minimal state instead of creating
+        # hidden business logic elsewhere.
+        if self.dataset.lower() != "math":
+            state = DispatchState(
+                request=request,
+                route_plan=route_plan,
+                route_cursor=0,
+                current_solution=None,
+                candidates=(),
+                termination_requested=False,
+                error_state=None,
+            )
+            return {
+                "dispatch_state": state,
                 "failure_source": None,
                 "error_state": None,
             }
-        solution = self._solution(generated) or self._solution(programmer)
-        if not isinstance(request, ArchitectureRequest) or not isinstance(route_plan, RoutePlan) or not solution:
+
+        if bootstrap_error is not None:
             return {
                 "dispatch_state": None,
                 "failure_source": FailureSource.BOOTSTRAP.value,
-                "error_state": {"error": "bootstrap did not produce a usable solution"},
+                "error_state": bootstrap_error,
             }
+
+        solution = (
+            self._solution(generate_result)
+            or self._solution(programmer_result)
+        )
+
+        if solution is None:
+            return {
+                "dispatch_state": None,
+                "failure_source": FailureSource.BOOTSTRAP.value,
+                "error_state": self._failure(
+                    "bootstrap did not produce a usable solution"
+                ),
+            }
+
         state = DispatchState(
             request=request,
             route_plan=route_plan,
@@ -79,7 +141,12 @@ class BootstrapResultNode(CustomNode):
             termination_requested=False,
             error_state=None,
         )
-        return {"dispatch_state": state, "failure_source": None, "error_state": None}
+
+        return {
+            "dispatch_state": state,
+            "failure_source": None,
+            "error_state": None,
+        }
 
 
 __all__ = ["BootstrapResultNode"]

@@ -2,7 +2,7 @@
 
 本版以“严格复现 MaAS 训练目标”为最高原则，正式冻结以下规则：
 
-> Failure 不产生额外 reward、advantage 或 penalty。  
+
 > 只要能够形成合法结果、获得可信 `cost_delta`、并由 Evaluator 可靠评分，就使用原始目标：
 >
 > `utility = score - 3.0 × cost_delta`
@@ -420,7 +420,7 @@ result_valid = False
 → skip policy update
 ```
 
-Bootstrap 失败本身不产生额外 penalty。
+
 
 ---
 
@@ -681,7 +681,7 @@ lambda message, attributes: (
 
 不得修改 cursor、state、attributes 或 candidates。
 
-保留 `InvalidOperatorNode`。无效 operator 表示规划、catalog 或配置异常，不产生额外 utility penalty；通常无法形成合法结果，因此跳过训练。
+保留 `InvalidOperatorNode`。无效 operator 表示规划、catalog 或配置异常
 
 ## OperatorRegistry
 
@@ -906,7 +906,6 @@ Reducer 不决定：
 - utility；
 - score；
 - cost 是否可信；
-- failure penalty。
 
 它只负责执行状态转换。
 
@@ -936,22 +935,6 @@ class FailureSource(str, Enum):
 ```python
 utility = score - 3.0 * cost_delta
 ```
-
-禁止出现：
-
-```python
-if failure_source == FailureSource.ROUTE_EXECUTION:
-    utility -= failure_penalty
-```
-
-也不再定义：
-
-- failure reward；
-- failure advantage；
-- route penalty；
-- fixed failure penalty。
-
----
 
 ## 二十、合法结果与 fatal failure
 
@@ -1009,7 +992,6 @@ skip policy update
 
 - 把 cost 默认为 0；
 - 把 score 默认为 0 后训练；
-- 人工添加 penalty；
 - 伪造合法 ArchitectureResult。
 
 ---
@@ -1169,7 +1151,6 @@ Evaluator 不负责：
 - optimizer；
 - batch；
 - checkpoint；
-- failure penalty；
 - route 修改。
 
 ---
@@ -1185,14 +1166,6 @@ class TrainingSignal:
     utility: float | None
     skip_reason: str | None
 ```
-
-不包含：
-
-- advantage；
-- failure reward；
-- failure penalty；
-- route penalty；
-- failure weight。
 
 构造规则：
 
@@ -1261,17 +1234,6 @@ Policy loss 使用原项目一致的符号、batch reduction 和归一化方式�
 ```python
 loss = -policy_log_prob * utility
 ```
-
-但实现时应保持原 MaAS 的具体 batch 计算口径，不额外增加：
-
-- failure penalty；
-- entropy bonus；
-- route penalty；
-- timeout penalty；
-- invalid output penalty；
-- 人工 advantage；
-- reward clipping。
-
 如果后续希望实验这些策略，必须作为独立消融实验，不能混入复现模式。
 
 ---
@@ -1511,7 +1473,7 @@ dataset
 | StateReducer | State、Result | 新 State | 纯 reducer | Model、score、utility |
 | Finalize | DispatchState | ArchitectureResult | cost tracker | Evaluator、backward |
 | Evaluator | Result、Context | EvaluationResult | scorer | optimizer、route |
-| TrainingSignal | EvaluationResult | update/utility/skip | utility coefficient | failure penalty |
+| TrainingSignal | EvaluationResult | update/utility/skip | utility coefficient 
 | LossUpdateNode | EvaluationResult | update result | TrainingSignal、Accumulator | operator 逻辑 |
 | BatchAccumulator | Tensor、utility | optimizer update | optimizer | score和失败规则 |
 | DatasetRunner | dataset | 全局结果 | RootGraph、checkpoint manager | operator 内部实现 |
@@ -1676,7 +1638,7 @@ applications/maas_reproduction/
 - eligibility 判断；
 - 原 MaAS utility；
 - skip reason；
-- 零额外 failure penalty。
+
 
 ## Task 9：训练生命周期
 
@@ -1797,7 +1759,6 @@ applications/maas_reproduction/
 → utility 必须完全相同
 ```
 
-这可以直接防止后续实现偷偷加入 failure penalty。
 
 ---
 
