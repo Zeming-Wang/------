@@ -1,5 +1,5 @@
-from maas_reproduction.schemas import ArchitectureRequest, FailureSource
-from components.architecture_exec_graph.components.route_planner_node import RoutePlannerNode
+from applications.maas_reproduction.maas_reproduction.schemas import ArchitectureRequest, FailureSource
+from applications.maas_reproduction.components.architecture_exec_graph.components.route_planner_node import RoutePlannerNode
 
 
 CATALOG = ("Generate", "Programmer", "SelfRefine", "EarlyStop")

@@ -63,7 +63,7 @@ class NativeBootstrapGraph(Graph):
         self.retry_limit = retry_limit
         self.dataset = dataset
 
-        super().__init__(name)
+        super().__init__(name, pull_keys={}, push_keys={})
 
     def build(self) -> None:
         if self._is_built:

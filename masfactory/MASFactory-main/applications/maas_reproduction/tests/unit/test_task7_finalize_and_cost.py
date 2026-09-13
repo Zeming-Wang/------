@@ -1,10 +1,10 @@
 import pytest
 
-from components.architecture_exec_graph.components.finalize_architecture_result_node import (
+from applications.maas_reproduction.components.architecture_exec_graph.components.finalize_architecture_result_node import (
     finalize_architecture_result,
 )
-from maas_reproduction.adapters.cost_tracker import CostTracker
-from maas_reproduction.schemas import (
+from applications.maas_reproduction.maas_reproduction.adapters.cost_tracker import CostTracker
+from applications.maas_reproduction.maas_reproduction.schemas import (
     ArchitectureRequest,
     DispatchState,
     FailureSource,
@@ -62,4 +62,3 @@ def test_finalize_missing_cost_is_unreliable_and_does_not_fabricate_zero():
     assert not result.cost_reliable
     assert result.cost_delta is None
     assert result.failure_source is FailureSource.INFRASTRUCTURE
-

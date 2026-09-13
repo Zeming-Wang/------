@@ -1,8 +1,8 @@
 import pytest
-from maas_reproduction.benchmarks import GSM8KBenchmark, MATHBenchmark
-from maas_reproduction.schemas import ArchitectureResult, EvaluationContext, FailureSource
-from maas_reproduction.training.training_signal import build_training_signal
-from components.evaluator_node import EvaluatorNode
+from applications.maas_reproduction.maas_reproduction.benchmarks import GSM8KBenchmark, MATHBenchmark
+from applications.maas_reproduction.maas_reproduction.schemas import ArchitectureResult, EvaluationContext, FailureSource
+from applications.maas_reproduction.maas_reproduction.training.training_signal import build_training_signal
+from applications.maas_reproduction.components.evaluator_node import EvaluatorNode
 
 
 def test_scorers_follow_dataset_rules():

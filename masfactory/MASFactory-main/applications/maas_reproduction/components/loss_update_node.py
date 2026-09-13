@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any
 from masfactory.components.custom_node import CustomNode
-from maas_reproduction.training.training_signal import build_training_signal
+from applications.maas_reproduction.maas_reproduction.training.training_signal import build_training_signal
 
 
 class LossUpdateNode(CustomNode):

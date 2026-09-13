@@ -12,13 +12,18 @@ from .components.invalid_operator_node import InvalidOperatorNode
 from .components.logic_switch import operator_route
 from .components.route_cursor_node import RouteCursorNode
 from .components.state_reducer_node import StateReducerNode
+from .components.controller_message import LoopControllerMessage
+from ..attribute_firewall import seal_loop_attributes
 
-DISPATCH_LOOP_KEYS = {"dispatch_state": "Current complete operator dispatch state."}
+
+LOOP_CONTROL_KEYS = {"loop_control": "LoopControllerMessage only."}
 
 
 def should_terminate(message: dict, attributes: dict) -> bool:
-    state = message["dispatch_state"]
-    return state.termination_requested or state.route_cursor >= len(state.route_plan.items)
+    control = message.get("loop_control")
+    if not isinstance(control, LoopControllerMessage):
+        raise TypeError("loop_control must be a LoopControllerMessage")
+    return not control.should_continue
 
 
 class OperatorDispatchLoop(Loop):
@@ -39,8 +44,45 @@ class OperatorDispatchLoop(Loop):
             max_iterations=max_iterations,
             terminate_condition_function=should_terminate,
             pull_keys={},
-            push_keys=DISPATCH_LOOP_KEYS,
+            push_keys={"dispatch_state": "Final dispatch state."},
         )
+        seal_loop_attributes(self)
+
+    def _forward(self, input: dict[str, object]) -> dict[str, object]:
+        """Keep business state out of the internal controller message.
+
+        The parent graph sends the initial ``dispatch_state`` to this composite node.
+        It is stored in the Loop-local attribute store, while the controller receives
+        only a ``LoopControllerMessage``.
+        """
+        state = input.get("dispatch_state")
+        if state is None:
+            return {
+                "dispatch_state": None,
+                "failure_source": input.get("failure_source"),
+                "error_state": input.get("error_state"),
+            }
+        self._attributes_store["dispatch_state"] = state
+        should_continue = not getattr(state, "termination_requested", False)
+        route_plan = getattr(state, "route_plan", None)
+        route_cursor = getattr(state, "route_cursor", 0)
+        if route_plan is not None:
+            should_continue = should_continue and route_cursor < len(route_plan.items)
+
+        super()._forward(
+            {
+                "loop_control": LoopControllerMessage(
+                    cursor=route_cursor,
+                    iteration=0,
+                    should_continue=should_continue,
+                )
+            }
+        )
+        return {
+            "dispatch_state": self._attributes_store.get("dispatch_state"),
+            "failure_source": input.get("failure_source"),
+            "error_state": input.get("error_state"),
+        }
 
     def build(self) -> None:
         if self._is_built:
@@ -50,7 +92,7 @@ class OperatorDispatchLoop(Loop):
         invalid = self.create_node(InvalidOperatorNode, "invalid_operator")
         reducer = self.create_node(StateReducerNode, "state_reducer")
 
-        self.edge_from_controller(cursor, keys=DISPATCH_LOOP_KEYS)
+        self.edge_from_controller(cursor, keys=LOOP_CONTROL_KEYS)
         self.create_edge(cursor, switch, {"operator_invocation": "Current operator invocation."})
 
         operator_nodes: dict[str, Any] = {}
@@ -87,8 +129,8 @@ class OperatorDispatchLoop(Loop):
             invalid, reducer,
             {"operator_result": "Structured OperatorResult."},
         )
-        self.edge_to_controller(reducer, keys=DISPATCH_LOOP_KEYS)
+        self.edge_to_controller(reducer, keys=LOOP_CONTROL_KEYS)
         super().build()
 
 
-__all__ = ["DISPATCH_LOOP_KEYS", "OperatorDispatchLoop", "should_terminate"]
+__all__ = ["LOOP_CONTROL_KEYS", "LoopControllerMessage", "OperatorDispatchLoop", "should_terminate"]

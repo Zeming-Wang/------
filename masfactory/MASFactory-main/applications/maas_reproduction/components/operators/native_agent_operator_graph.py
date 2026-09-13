@@ -51,7 +51,9 @@ class NativeAgentOperatorGraph(Graph):
     def __init__(self, name: str = "NativeAgentOperatorGraph", *, operator_name: str = "Generate",
                  operator: Any = None, agent: Any = None, instructions: str = "",
                  retry_limit: int = 0, validator: Callable[[OperatorResult], None] | None = None) -> None:
-        super().__init__(name)
+        # This operator graph is embedded below the protected architecture
+        # subtree.  It must never inherit caller attributes implicitly.
+        super().__init__(name, pull_keys={}, push_keys={})
         if retry_limit < 0 or isinstance(retry_limit, bool):
             raise ValueError("retry_limit must be a non-negative integer")
         self.operator_name, self.adapter = operator_name, operator if operator is not None else agent
@@ -68,7 +70,15 @@ class NativeAgentOperatorGraph(Graph):
 
     def _forward_operator(self, data: dict[str, Any]) -> dict[str, Any]:
         invocation = data.get("operator_invocation", data)
-        if isinstance(invocation, OperatorInvocation):
+        # Accept the canonical dataclass and equivalent objects imported via
+        # the fully-qualified ``applications.maas_reproduction`` path.  The
+        # latter can be a distinct Python class during test collection; the
+        # contract is structural, so do not turn that import detail into an
+        # execution failure.
+        if isinstance(invocation, OperatorInvocation) or all(
+            hasattr(invocation, field)
+            for field in ("operator_name", "problem", "entry_point", "current_solution", "candidates")
+        ):
             payload = {"operator_invocation": invocation, "problem": invocation.problem,
                        "entry_point": invocation.entry_point, "current_solution": invocation.current_solution,
                        "candidates": invocation.candidates, "instructions": self.instructions}

@@ -9,7 +9,7 @@ class ProgrammerGraph(Graph):
     """Expose the Programmer operator as ``OperatorInvocation -> OperatorResult``."""
     def __init__(self, name: str = "Programmer", *, code_generator: Any = None,
                  programmer: Any = None, executor: Any = None, max_attempts: int = 3) -> None:
-        super().__init__(name)
+        super().__init__(name, pull_keys={}, push_keys={})
         if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or max_attempts < 1:
             raise ValueError("max_attempts must be a positive integer")
         self.generator = code_generator if code_generator is not None else programmer

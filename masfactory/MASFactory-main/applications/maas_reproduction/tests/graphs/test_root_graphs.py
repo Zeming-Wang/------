@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from maas_reproduction.runtime.dataset_runner import DatasetRunner
-from maas_reproduction.schemas import ArchitectureResult
-from workflow import build_test_root_graph, build_train_root_graph
+from applications.maas_reproduction.maas_reproduction.runtime.dataset_runner import DatasetRunner
+from applications.maas_reproduction.maas_reproduction.schemas import ArchitectureResult
+from applications.maas_reproduction.workflow import build_test_root_graph, build_train_root_graph
 
 
 class FakeTensor:

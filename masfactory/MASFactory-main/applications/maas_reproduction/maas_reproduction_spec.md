@@ -15,9 +15,9 @@
 
 ---
 
-相关的apikey
+相关的apikeysk-ud2hiSb4GqQYi2MuGr3yGVo4pYNtKw3huWY9K9hFerZJcE0c
 
-api_key = sk-ud2hiSb4GqQYi2MuGr3yGVo4pYNtKw3huWY9K9hFerZJcE0c
+api_key = 
 base_url = https://api.csun.site/v1
 model_name = gpt-4o-mini
 

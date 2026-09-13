@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from maas_reproduction.schemas import CostResult
+from applications.maas_reproduction.maas_reproduction.schemas import CostResult
 
 
 @dataclass(frozen=True, slots=True)

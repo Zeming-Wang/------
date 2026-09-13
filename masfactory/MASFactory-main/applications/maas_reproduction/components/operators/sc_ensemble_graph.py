@@ -10,7 +10,7 @@ from .native_agent_operator_graph import _call
 
 class ScEnsembleGraph(Graph):
     def __init__(self, name: str = "ScEnsemble", *, operator: Any = None, agent: Any = None) -> None:
-        super().__init__(name); self.adapter = operator if operator is not None else agent
+        super().__init__(name, pull_keys={}, push_keys={}); self.adapter = operator if operator is not None else agent
 
     def build(self) -> None:
         if self._is_built: return

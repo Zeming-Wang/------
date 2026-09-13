@@ -7,7 +7,7 @@ from typing import Any
 
 from masfactory.components.custom_node import CustomNode
 
-from maas_reproduction.schemas import (
+from applications.maas_reproduction.maas_reproduction.schemas import (
     ArchitectureResult,
     CostResult,
     DispatchState,
@@ -31,8 +31,17 @@ def finalize_architecture_result(message: dict[str, Any], attributes: dict[str, 
     if prediction is None and isinstance(state, DispatchState):
         prediction = state.current_solution or (state.candidates[-1] if state.candidates else None)
 
-    error_state = state.error_state if isinstance(state, DispatchState) else None
-    failure = _value(completion, "failure_source") or _value(error_state, "failure_source")
+    # Bootstrap/Loop failures can arrive beside the business state when no
+    # DispatchState exists.  They must remain visible at this seam instead of
+    # being silently converted into an unattributed invalid result.
+    error_state = (
+        state.error_state if isinstance(state, DispatchState) else None
+    ) or message.get("error_state")
+    failure = (
+        _value(completion, "failure_source")
+        or message.get("failure_source")
+        or _value(error_state, "failure_source")
+    )
     try:
         failure_source = FailureSource(failure) if failure is not None else None
     except (TypeError, ValueError):
@@ -91,8 +100,21 @@ def finalize_architecture_result(message: dict[str, Any], attributes: dict[str, 
 class FinalizeArchitectureResultNode(CustomNode):
     """Convert final dispatch state to ``ArchitectureResult`` without detaching policy tensors."""
 
-    def __init__(self, name: str = "finalize_architecture_result", **kwargs: Any) -> None:
-        super().__init__(name=name, forward=finalize_architecture_result, pull_keys={}, push_keys={}, **kwargs)
+    def __init__(self, name: str = "finalize_architecture_result", *, cost_tracker: Any = None, **kwargs: Any) -> None:
+        attributes = dict(kwargs.pop("attributes", {}) or {})
+        if cost_tracker is not None:
+            attributes["cost_tracker"] = cost_tracker
+        super().__init__(
+            name=name,
+            forward=finalize_architecture_result,
+            # Cost baseline is an execution-local attribute explicitly pulled
+            # from the parent ArchitectureExecGraph; no other attributes are
+            # inherited.
+            pull_keys={"cost_before": "Per-invocation cost baseline."},
+            push_keys={},
+            attributes=attributes,
+            **kwargs,
+        )
 
 
 __all__ = ["FinalizeArchitectureResultNode", "finalize_architecture_result"]

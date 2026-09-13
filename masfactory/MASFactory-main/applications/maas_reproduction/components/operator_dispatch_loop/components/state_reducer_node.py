@@ -6,7 +6,8 @@ from collections.abc import Mapping
 
 from masfactory.components.custom_node import CustomNode
 
-from maas_reproduction.schemas import DispatchState, OperatorResult
+from applications.maas_reproduction.maas_reproduction.schemas import DispatchState, OperatorResult
+from .controller_message import LoopControllerMessage
 
 
 def reduce_result(previous: DispatchState, result: OperatorResult) -> DispatchState:
@@ -48,8 +49,24 @@ def reduce_result(previous: DispatchState, result: OperatorResult) -> DispatchSt
 
 
 def reduce_operator_result(message: dict, attributes: dict) -> dict:
-    previous = message.get("dispatch_state", attributes.get("dispatch_state"))
-    return {"dispatch_state": reduce_result(previous, message["operator_result"])}
+    previous = attributes.get("dispatch_state")
+    if not isinstance(previous, DispatchState):
+        raise TypeError("Loop-local dispatch_state must be a DispatchState")
+    updated = reduce_result(previous, message["operator_result"])
+    control = message.get("loop_control")
+    iteration = control.iteration + 1 if isinstance(control, LoopControllerMessage) else 1
+    should_continue = (
+        not updated.termination_requested
+        and updated.route_cursor < len(updated.route_plan.items)
+    )
+    return {
+        "dispatch_state": updated,
+        "loop_control": LoopControllerMessage(
+            cursor=updated.route_cursor,
+            iteration=iteration,
+            should_continue=should_continue,
+        ),
+    }
 
 
 class StateReducerNode(CustomNode):

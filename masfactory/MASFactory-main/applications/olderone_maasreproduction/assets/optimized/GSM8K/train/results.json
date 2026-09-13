@@ -1,0 +1,52 @@
+[
+    {
+        "round": 1,
+        "score": 1.0,
+        "avg_cost": 0.0,
+        "total_cost": 0.0,
+        "token": 0,
+        "time": "2026-08-11 11:35:54"
+    },
+    {
+        "round": 1,
+        "score": 0.8,
+        "avg_cost": 0.0,
+        "total_cost": 0.0,
+        "token": 0,
+        "time": "2026-08-11 11:49:00"
+    },
+    {
+        "round": 1,
+        "score": 1.0,
+        "avg_cost": 0.00015652,
+        "total_cost": 0.00015652,
+        "token": 1,
+        "time": "2026-08-11 12:10:38"
+    },
+    {
+        "round": 3,
+        "score": 1.0,
+        "avg_cost": 0.0010645319999999993,
+        "total_cost": 0.021290639999999986,
+        "token": 122098,
+        "prompt_tokens": 92120,
+        "completion_tokens": 29978,
+        "total_tokens": 122098,
+        "textgrad_applied": false,
+        "textgrad_events": [],
+        "time": "2026-08-11 13:45:51"
+    },
+    {
+        "round": 4,
+        "score": 1.0,
+        "avg_cost": 0.001476024666666665,
+        "total_cost": 0.04428073999999995,
+        "token": 256807,
+        "prompt_tokens": 197323,
+        "completion_tokens": 59484,
+        "total_tokens": 256807,
+        "textgrad_applied": false,
+        "textgrad_events": [],
+        "time": "2026-08-11 14:17:45"
+    }
+]

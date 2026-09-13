@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 from dataclasses import asdict, is_dataclass
 from masfactory.components.custom_node import CustomNode
-from maas_reproduction.schemas import EvaluationResult, FailureSource
+from applications.maas_reproduction.maas_reproduction.schemas import EvaluationResult, FailureSource
 
 
 def _field(value: object, name: str, default: Any = None) -> Any:
@@ -31,6 +31,7 @@ class EvaluatorNode(CustomNode):
             result_valid=valid,
             cost_reliable=bool(_field(architecture, "cost_reliable", False)),
             evaluation_reliable=False,
+            execution_metadata=dict(_field(architecture, "execution_metadata", {}) or {}),
         )
         if not valid:
             base["failure_source"] = base["failure_source"] or _field(architecture, "failure_source")

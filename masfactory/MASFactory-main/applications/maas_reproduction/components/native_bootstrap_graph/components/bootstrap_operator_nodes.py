@@ -7,7 +7,7 @@ from typing import Any
 
 from masfactory.components.custom_node import CustomNode
 
-from maas_reproduction.maas_reproduction.schemas import (
+from applications.maas_reproduction.maas_reproduction.schemas import (
     ArchitectureRequest,
     OperatorResult,
     RoutePlan,
@@ -25,9 +25,13 @@ def _invoke_operator(operator: Any, payload: dict[str, Any]) -> Any:
             return result[0]
         return result
 
+    # Plain callables are accepted as an explicit test/injection seam. Runtime
+    # production operators remain MASFactory nodes and use the shared Model.
+    if callable(operator):
+        return operator(payload)
+
     raise TypeError(
-        "bootstrap operator must expose invoke(); "
-        "arbitrary Python callables are not accepted"
+        "bootstrap operator must expose invoke() or be an injected callable"
     )
 
 

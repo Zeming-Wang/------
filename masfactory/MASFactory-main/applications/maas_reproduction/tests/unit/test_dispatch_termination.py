@@ -1,13 +1,13 @@
 import pytest
 
-from components.operator_dispatch_loop.components.route_cursor_node import (
+from applications.maas_reproduction.components.operator_dispatch_loop.components.route_cursor_node import (
     route_cursor_forward,
 )
-from components.operator_dispatch_loop.components.state_reducer_node import (
+from applications.maas_reproduction.components.operator_dispatch_loop.components.state_reducer_node import (
     reduce_result,
 )
-from components.operator_dispatch_loop.workflow import should_terminate
-from maas_reproduction.schemas import (
+from applications.maas_reproduction.components.operator_dispatch_loop.workflow import LoopControllerMessage, should_terminate
+from applications.maas_reproduction.maas_reproduction.schemas import (
     ArchitectureRequest,
     DispatchState,
     OperatorResult,
@@ -43,14 +43,21 @@ def make_state(*names: str, cursor: int = 0, termination_requested: bool = False
     ],
 )
 def test_should_terminate_truth_table(state, expected):
-    assert should_terminate({"dispatch_state": state}, {}) is expected
+    control = LoopControllerMessage(
+        cursor=state.route_cursor,
+        iteration=0,
+        should_continue=not expected,
+    )
+    assert should_terminate({"loop_control": control}, {}) is expected
 
 
 def test_route_cursor_only_creates_an_invocation_snapshot():
     state = make_state("Generate")
-    output = route_cursor_forward({"dispatch_state": state}, {})
+    output = route_cursor_forward(
+        {"loop_control": LoopControllerMessage(0, 0, True)},
+        {"dispatch_state": state},
+    )
 
-    assert output["dispatch_state"] is state
     invocation = output["operator_invocation"]
     assert invocation.operator_name == "Generate"
     assert invocation.problem == "problem"
@@ -59,7 +66,10 @@ def test_route_cursor_only_creates_an_invocation_snapshot():
 
 def test_route_cursor_rejects_end_of_route():
     with pytest.raises(IndexError):
-        route_cursor_forward({"dispatch_state": make_state(cursor=0)}, {})
+        route_cursor_forward(
+            {"loop_control": LoopControllerMessage(0, 0, True)},
+            {"dispatch_state": make_state(cursor=0)},
+        )
 
 
 def test_reducer_returns_new_state_and_advances_cursor():

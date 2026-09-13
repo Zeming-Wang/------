@@ -1,10 +1,10 @@
 from masfactory.components.custom_node import CustomNode
 
-from components.operator_dispatch_loop.workflow import (
-    DISPATCH_LOOP_KEYS,
+from applications.maas_reproduction.components.operator_dispatch_loop.workflow import (
+    LOOP_CONTROL_KEYS,
     OperatorDispatchLoop,
 )
-from maas_reproduction.schemas import OperatorResult
+from applications.maas_reproduction.maas_reproduction.schemas import OperatorResult
 
 
 class FakeOperator(CustomNode):
@@ -28,8 +28,10 @@ def test_dispatch_loop_builds_controller_routes_and_feedback():
     loop.build()
 
     assert loop.check_built()
-    assert loop._controller.input_keys == DISPATCH_LOOP_KEYS
-    assert loop._controller.output_keys == DISPATCH_LOOP_KEYS
+    assert loop._controller.input_keys == LOOP_CONTROL_KEYS
+    assert loop._controller.output_keys == LOOP_CONTROL_KEYS
+    assert "dispatch_state" not in loop._controller.input_keys
+    assert "dispatch_state" not in loop._controller.output_keys
     assert {node.name for node in loop._nodes.values()} == {
         "route_cursor",
         "operator_switch",

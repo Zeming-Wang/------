@@ -121,12 +121,16 @@ class EvaluationContext:
     problem_index: int
     expected_answer: Any
     entry_point: str = ""
+    test: str | None = None
+    canonical_solution: str | None = None
 
     def __post_init__(self) -> None:
         _require_non_empty_text(self.problem, "problem")
         _require_non_negative_int(self.problem_index, "problem_index")
         if not isinstance(self.entry_point, str):
             raise TypeError("entry_point must be a str")
+        _require_optional_text(self.test, "test")
+        _require_optional_text(self.canonical_solution, "canonical_solution")
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,6 +339,7 @@ class EvaluationResult:
     result_valid: bool
     cost_reliable: bool
     evaluation_reliable: bool
+    execution_metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_non_negative_int(self.problem_index, "problem_index")
@@ -348,6 +353,7 @@ class EvaluationResult:
         _require_bool(self.result_valid, "result_valid")
         _require_bool(self.cost_reliable, "cost_reliable")
         _require_bool(self.evaluation_reliable, "evaluation_reliable")
+        object.__setattr__(self, "execution_metadata", _mapping_copy(self.execution_metadata, "execution_metadata"))
         if self.result_valid and (self.prediction is None or not self.prediction.strip()):
             raise ValueError("a valid architecture result requires a non-empty prediction")
         if self.cost_reliable and (normalized_cost is None or normalized_cost < 0.0):
@@ -404,6 +410,7 @@ class SampleResult:
     update_performed: bool
     skip_reason: str | None
     loss_value: float | None
+    failure_detail: str | None = None
 
     def __post_init__(self) -> None:
         _require_non_negative_int(self.problem_index, "problem_index")
@@ -420,6 +427,7 @@ class SampleResult:
         object.__setattr__(self, "policy_log_prob_value", normalized_log_prob)
         object.__setattr__(self, "utility", normalized_utility)
         object.__setattr__(self, "loss_value", normalized_loss)
+        _require_optional_text(self.failure_detail, "failure_detail")
         _require_non_empty_text(self.status, "status")
         object.__setattr__(self, "failure_source", _failure_source(self.failure_source))
         _require_bool(self.result_valid, "result_valid")
@@ -454,6 +462,7 @@ class SampleResult:
             "update_performed": self.update_performed,
             "skip_reason": self.skip_reason,
             "loss_value": self.loss_value,
+            "failure_detail": self.failure_detail,
         }
 
 

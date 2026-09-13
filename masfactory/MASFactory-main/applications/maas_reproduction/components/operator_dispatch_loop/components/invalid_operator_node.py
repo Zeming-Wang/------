@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from masfactory.components.custom_node import CustomNode
 
-from maas_reproduction.schemas import OperatorInvocation, OperatorResult
+from applications.maas_reproduction.maas_reproduction.schemas import OperatorInvocation, OperatorResult
 
 
 def invalid_operator_forward(message: dict, attributes: dict) -> dict:

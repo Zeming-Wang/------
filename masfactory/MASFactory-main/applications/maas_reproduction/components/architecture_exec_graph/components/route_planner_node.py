@@ -7,12 +7,12 @@ from typing import Any
 
 from masfactory.components.custom_node import CustomNode
 
-from maas_reproduction.contracts import (
+from applications.maas_reproduction.maas_reproduction.contracts import (
     EARLY_STOP_OPERATOR,
     FIRST_LAYER_EARLY_STOP_LOG_PROB_ADJUSTMENT,
     GENERATE_OPERATOR,
 )
-from maas_reproduction.schemas import ArchitectureRequest, FailureSource, RouteItem, RoutePlan
+from applications.maas_reproduction.maas_reproduction.schemas import ArchitectureRequest, FailureSource, RouteItem, RoutePlan
 
 
 class RoutePlannerNode(CustomNode):
@@ -26,14 +26,36 @@ class RoutePlannerNode(CustomNode):
 
     def __init__(
         self,
-        policy_controller: Any,
-        operator_embeddings: Any,
-        operator_catalog: Sequence[str],
-        *,
+        *args: Any,
+        policy_controller: Any = None,
+        operator_embeddings: Any = None,
+        operator_catalog: Sequence[str] | None = None,
         replay_routes: Mapping[int, Sequence[Sequence[str] | Sequence[int]]] | None = None,
         replay_policy_log_probs: Mapping[int, Any] | None = None,
         name: str = "route_planner",
     ) -> None:
+        # MASFactory create_node supplies the node name as the first positional
+        # argument, while direct unit tests historically supplied the three
+        # planner dependencies positionally.  Accept both forms explicitly.
+        positional = list(args)
+        if positional and isinstance(positional[0], str):
+            name = positional.pop(0)
+        if positional:
+            if policy_controller is not None:
+                raise TypeError("policy_controller supplied twice")
+            policy_controller = positional.pop(0)
+        if positional:
+            if operator_embeddings is not None:
+                raise TypeError("operator_embeddings supplied twice")
+            operator_embeddings = positional.pop(0)
+        if positional:
+            if operator_catalog is not None:
+                raise TypeError("operator_catalog supplied twice")
+            operator_catalog = positional.pop(0)
+        if positional:
+            raise TypeError("unexpected positional RoutePlannerNode arguments")
+        if operator_catalog is None:
+            raise ValueError("operator_catalog is required")
         catalog = tuple(operator_catalog)
         if not catalog or any(not isinstance(item, str) or not item for item in catalog):
             raise ValueError("operator_catalog must contain non-empty names")
@@ -51,7 +73,7 @@ class RoutePlannerNode(CustomNode):
         if isinstance(request, Mapping):
             request = ArchitectureRequest(**dict(request))
         if not isinstance(request, ArchitectureRequest):
-            return self._failure("architecture_request is required")
+            return self._failure("architecture_request is required", request=request)
 
         try:
             replay = self.replay_routes is not None
@@ -90,9 +112,15 @@ class RoutePlannerNode(CustomNode):
             items = self._flatten(selected_layers)
             if replay and self.replay_policy_log_probs.get(request.problem_index) is None:
                 policy_log_prob = self._aggregate_log_probs(log_probs_layers) if log_probs_layers else policy_log_prob
-            return {"route_plan": RoutePlan(items=items, policy_log_prob=policy_log_prob)}
+            return {
+                "architecture_request": request,
+                # Internal bootstrap nodes historically call this field ``request``;
+                # it is the same execution-only object and contains no answer key.
+                "request": request,
+                "route_plan": RoutePlan(items=items, policy_log_prob=policy_log_prob),
+            }
         except Exception as exc:  # planning failure is structured; never fabricate a RoutePlan
-            return self._failure(str(exc))
+            return self._failure(str(exc), request=request)
 
     def _flatten(self, selected_layers: Sequence[Sequence[str] | Sequence[int]]) -> tuple[RouteItem, ...]:
         flattened: list[RouteItem] = []
@@ -150,8 +178,9 @@ class RoutePlannerNode(CustomNode):
         return number
 
     @staticmethod
-    def _failure(error: str) -> dict[str, object]:
-        return {"route_plan": None, "policy_log_prob": None,
+    def _failure(error: str, request: Any = None) -> dict[str, object]:
+        return {"architecture_request": request, "request": request,
+                "route_plan": None, "policy_log_prob": None,
                 "failure_source": FailureSource.PLANNING,
                 "result_valid": False, "planning_error": error}
 

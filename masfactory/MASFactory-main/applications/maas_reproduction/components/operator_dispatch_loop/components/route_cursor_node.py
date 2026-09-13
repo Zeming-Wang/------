@@ -6,14 +6,16 @@ from collections.abc import Mapping
 
 from masfactory.components.custom_node import CustomNode
 
-from maas_reproduction.schemas import DispatchState, OperatorInvocation
+from applications.maas_reproduction.maas_reproduction.schemas import DispatchState, OperatorInvocation
 
 
 def route_cursor_forward(message: dict, attributes: dict) -> dict:
-    """Create one immutable operator invocation from the current state."""
-    state = message["dispatch_state"]
+    """Create one immutable operator invocation from Loop-local state."""
+    if "loop_control" not in message:
+        raise KeyError("loop_control is required")
+    state = attributes.get("dispatch_state")
     if not isinstance(state, DispatchState):
-        raise TypeError("dispatch_state must be a DispatchState")
+        raise TypeError("Loop-local dispatch_state must be a DispatchState")
     if state.route_cursor >= len(state.route_plan.items):
         raise IndexError("route_cursor is past the end of the route plan")
 
@@ -28,7 +30,7 @@ def route_cursor_forward(message: dict, attributes: dict) -> dict:
         current_solution=state.current_solution or "",
         candidates=state.candidates,
     )
-    return {"dispatch_state": state, "operator_invocation": invocation}
+    return {"operator_invocation": invocation}
 
 
 class RouteCursorNode(CustomNode):
@@ -38,8 +40,8 @@ class RouteCursorNode(CustomNode):
         super().__init__(
             name=name,
             forward=route_cursor_forward,
-            pull_keys={},
-            push_keys={"dispatch_state": "Current dispatch state."},
+            pull_keys={"dispatch_state": "Current dispatch state."},
+            push_keys={},
         )
 
 

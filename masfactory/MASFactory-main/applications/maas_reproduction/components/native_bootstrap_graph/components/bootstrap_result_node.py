@@ -6,7 +6,7 @@ from typing import Any
 
 from masfactory.components.custom_node import CustomNode
 
-from maas_reproduction.maas_reproduction.schemas import (
+from applications.maas_reproduction.maas_reproduction.schemas import (
     ArchitectureRequest,
     DispatchState,
     FailureSource,

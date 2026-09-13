@@ -8,6 +8,7 @@ from .components.code_parse_node import CodeParseNode
 from .components.programmer_execution_node import ProgrammerExecutionNode
 from .components.programmer_result_node import ProgrammerResultNode
 from .components.retry_decision_node import RetryDecisionNode
+from ...attribute_firewall import seal_loop_attributes
 
 
 class ProgrammerRetryLoop(Loop):
@@ -20,6 +21,7 @@ class ProgrammerRetryLoop(Loop):
         super().__init__(name, max_iterations=max_attempts + 1,
                          terminate_condition_function=lambda *_args: False,
                          pull_keys={}, push_keys={})
+        seal_loop_attributes(self)
 
     def build(self) -> None:
         if self._is_built: return
@@ -32,6 +34,11 @@ class ProgrammerRetryLoop(Loop):
             result.name: lambda message, _attrs: not bool(message.get("retry_requested")),
             self._controller.name: lambda message, _attrs: bool(message.get("retry_requested")),
         })
+        # LogicSwitch is a MASFactory control component whose defaults are
+        # ``None`` (inherit all attributes).  This retry loop is an explicit
+        # firewall, so keep its control node attribute-free as well.
+        switch.set_pull_keys({})
+        switch.set_push_keys({})
 
         self.edge_from_controller(generate, {"operator_invocation": "Operator invocation.",
                                              "feedback": "Execution feedback.", "attempt": "Attempt number."})

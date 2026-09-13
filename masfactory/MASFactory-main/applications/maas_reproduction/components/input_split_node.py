@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from masfactory.components.custom_node import CustomNode
-from maas_reproduction.schemas import ArchitectureRequest, EvaluationContext
+from applications.maas_reproduction.maas_reproduction.schemas import ArchitectureRequest, EvaluationContext
 
 
 class InputSplitNode(CustomNode):
@@ -24,7 +24,8 @@ class InputSplitNode(CustomNode):
         entry = payload.get("entry_point", "")
         expected = payload.get("expected_answer", payload.get("answer"))
         request = ArchitectureRequest(str(problem), int(index), str(entry))
-        context = EvaluationContext(str(problem), int(index), expected, str(entry))
+        context = EvaluationContext(str(problem), int(index), expected, str(entry),
+                                    payload.get("test"), payload.get("canonical_solution"))
         return {"architecture_request": request, "evaluation_context": context}
 
 

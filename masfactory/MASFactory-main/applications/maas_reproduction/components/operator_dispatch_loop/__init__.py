@@ -1,3 +1,3 @@
-from .workflow import DISPATCH_LOOP_KEYS, OperatorDispatchLoop, should_terminate
+from .workflow import LOOP_CONTROL_KEYS, LoopControllerMessage, OperatorDispatchLoop, should_terminate
 
-__all__ = ["DISPATCH_LOOP_KEYS", "OperatorDispatchLoop", "should_terminate"]
+__all__ = ["LOOP_CONTROL_KEYS", "LoopControllerMessage", "OperatorDispatchLoop", "should_terminate"]

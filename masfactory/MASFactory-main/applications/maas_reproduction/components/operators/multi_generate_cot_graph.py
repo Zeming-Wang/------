@@ -9,7 +9,7 @@ from .native_agent_operator_graph import _call, normalize_result
 
 class MultiGenerateCoTGraph(Graph):
     def __init__(self, name: str = "MultiGenerateCoT", *, operator: Any = None, agent: Any = None) -> None:
-        super().__init__(name)
+        super().__init__(name, pull_keys={}, push_keys={})
         self.adapter = operator if operator is not None else agent
 
     def build(self) -> None:

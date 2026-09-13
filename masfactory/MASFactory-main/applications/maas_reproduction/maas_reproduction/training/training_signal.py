@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from ..schemas import EvaluationResult, TrainingSignal
+from applications.maas_reproduction.maas_reproduction.schemas import EvaluationResult, TrainingSignal
 
 
 def build_training_signal(evaluation_result: EvaluationResult | Mapping[str, object]) -> TrainingSignal:
