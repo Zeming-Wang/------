@@ -25,7 +25,10 @@ def reduce_result(previous: DispatchState, result: OperatorResult) -> DispatchSt
         candidates.append(result.solution)
 
     error_state = previous.error_state
-    if result.status not in {"success", "ok", "completed"}:
+    is_early_stop_control = (
+        result.operator_name == "EarlyStop" and result.status == "control"
+    )
+    if result.status not in {"success", "ok", "completed"} and not is_early_stop_control:
         error_state = {
             **(previous.error_state or {}),
             "operator_name": result.operator_name,
@@ -33,7 +36,7 @@ def reduce_result(previous: DispatchState, result: OperatorResult) -> DispatchSt
             **result.metadata,
         }
 
-    terminate = previous.termination_requested or result.operator_name == "EarlyStop"
+    terminate = previous.termination_requested or is_early_stop_control
     if result.metadata.get("termination_requested") is True:
         terminate = True
 

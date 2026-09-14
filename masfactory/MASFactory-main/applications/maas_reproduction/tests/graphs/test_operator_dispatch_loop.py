@@ -36,6 +36,7 @@ def test_dispatch_loop_builds_controller_routes_and_feedback():
         "route_cursor",
         "operator_switch",
         "invalid_operator",
+        "early_stop_control",
         "state_reducer",
         "Generate",
     }

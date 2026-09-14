@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Any
 from masfactory.components.custom_node import CustomNode
+from ..programmer_core import ProgrammerCore
 
 
 class CodeParseNode(CustomNode):
@@ -13,10 +14,10 @@ class CodeParseNode(CustomNode):
         error = data.get("generation_error")
         if error:
             return {**data, "parse_error": error}
-        if not isinstance(code, str) or not code.strip():
-            return {**data, "parse_error": "generated code is empty"}
-        if "solve" not in code:
-            return {**data, "parse_error": "generated code has no solve function"}
+        try:
+            ProgrammerCore.parse(code)
+        except ValueError as exc:
+            return {**data, "parse_error": str(exc)}
         return {**data, "parse_error": None}
 
 

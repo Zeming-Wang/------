@@ -8,7 +8,11 @@ DEFAULTS = {
     "SelfRefine": "Improve the proposed solution and provide a corrected final answer.",
     "MultiGenerateCoT": "Produce an independent step-by-step solution.",
     "ScEnsemble": "Select the most consistent candidate solution.",
-    "Programmer": "Write a correct program for the requested task.",
+    "Programmer": (
+        "Write only executable Python code for the requested math problem. "
+        "Define a zero-argument function named solve and print(solve()) at the end. "
+        "Do not return Markdown fences or explanations."
+    ),
 }
 
 class PromptLoader:

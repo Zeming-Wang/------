@@ -101,3 +101,13 @@ def test_reducer_marks_early_stop_without_penalty_fields():
     assert updated.termination_requested is True
     assert updated.route_cursor == 1
     assert not hasattr(updated, "utility")
+    assert updated.error_state is None
+
+
+def test_loop_builds_early_stop_control_branch():
+    from applications.maas_reproduction.components.operator_dispatch_loop.workflow import OperatorDispatchLoop
+
+    loop = OperatorDispatchLoop(operator_registry={})
+    loop.build()
+    assert "early_stop_control" in loop._nodes
+    assert "EarlyStop" not in loop.operator_registry

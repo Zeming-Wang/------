@@ -46,13 +46,22 @@ class SampleResultNode(CustomNode):
 
 def _failure_detail(evaluation: object) -> str | None:
     metadata = _get(evaluation, "execution_metadata", {})
+    cost_error = metadata.get("cost_error") if isinstance(metadata, dict) else None
+    if cost_error:
+        return str(cost_error)[:500]
     error_state = metadata.get("error_state") if isinstance(metadata, dict) else None
     if not isinstance(error_state, dict):
         return None
     stage = error_state.get("stage")
     error_type = error_state.get("error_type")
     message = error_state.get("message")
-    parts = [str(value) for value in (stage, error_type, message) if value]
+    operator_name = error_state.get("operator_name")
+    status = error_state.get("status")
+    parts = [
+        str(value)
+        for value in (stage, operator_name, status, error_type, message)
+        if value
+    ]
     return ": ".join(parts)[:500] if parts else None
 
 

@@ -18,6 +18,11 @@ class Manager:
         self.total_cost = value
 
 
+class UnpricedManager(Manager):
+    cost_reliable = False
+    cost_reliability_error = "pricing unavailable"
+
+
 def state(policy):
     request = ArchitectureRequest("solve", 0)
     plan = RoutePlan((RouteItem(0, 0, 0, "Generate"),), policy)
@@ -35,6 +40,17 @@ def test_cost_tracker_reports_delta_and_reset():
     result = tracker.delta(before, tracker.snapshot())
     assert not result.reliable
     assert "decreased" in result.error
+
+
+def test_cost_tracker_does_not_treat_unpriced_zero_as_reliable():
+    manager = UnpricedManager(0.0)
+    tracker = CostTracker(manager)
+    before = tracker.snapshot()
+    manager.total_cost = 0.0
+    result = tracker.delta(before, tracker.snapshot())
+    assert result.value is None
+    assert not result.reliable
+    assert result.error == "pricing unavailable"
 
 
 def test_finalize_preserves_live_policy_value_and_reports_cost():

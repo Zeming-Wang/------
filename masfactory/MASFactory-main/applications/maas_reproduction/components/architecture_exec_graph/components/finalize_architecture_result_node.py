@@ -46,6 +46,11 @@ def finalize_architecture_result(message: dict[str, Any], attributes: dict[str, 
         failure_source = FailureSource(failure) if failure is not None else None
     except (TypeError, ValueError):
         failure_source = FailureSource.ROUTE_EXECUTION
+    if failure_source is None and error_state:
+        # A valid fallback solution may coexist with a non-success operator
+        # result. Preserve that provenance instead of emitting a bare
+        # recoverable_failure with no source.
+        failure_source = FailureSource.ROUTE_EXECUTION
 
     result_valid = isinstance(state, DispatchState) and bool(prediction and str(prediction).strip())
     status = _value(completion, "status") or ("success" if result_valid and not error_state else "recoverable_failure" if result_valid else "invalid_result")
@@ -79,6 +84,11 @@ def finalize_architecture_result(message: dict[str, Any], attributes: dict[str, 
         }
         if error_state:
             execution_metadata["error_state"] = dict(error_state)
+    elif isinstance(error_state, Mapping):
+        # Bootstrap failures intentionally have no DispatchState.  Preserve
+        # their structured, non-sensitive diagnostic instead of dropping it
+        # at the finalization seam.
+        execution_metadata["error_state"] = dict(error_state)
     completion_metadata = _value(completion, "metadata")
     if isinstance(completion_metadata, Mapping):
         execution_metadata.update(dict(completion_metadata))

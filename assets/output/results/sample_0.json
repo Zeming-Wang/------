@@ -1,0 +1,17 @@
+{
+  "problem_index": 0,
+  "prediction": null,
+  "score": null,
+  "cost_delta": 6e-06,
+  "status": "invalid_result",
+  "failure_source": "bootstrap",
+  "result_valid": false,
+  "cost_reliable": true,
+  "evaluation_reliable": false,
+  "policy_log_prob_value": null,
+  "utility": null,
+  "update_performed": false,
+  "skip_reason": null,
+  "loss_value": null,
+  "failure_detail": "programmer: ValueError: generated code has no solve function"
+}

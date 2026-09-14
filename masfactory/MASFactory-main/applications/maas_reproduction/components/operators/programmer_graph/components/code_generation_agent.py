@@ -2,7 +2,8 @@
 from __future__ import annotations
 from typing import Any
 from masfactory.components.custom_node import CustomNode
-from ..workflow_helpers import call_adapter, extract_code
+from ..workflow_helpers import call_adapter
+from ..programmer_core import ProgrammerCore
 
 
 class CodeGenerationAgent(CustomNode):
@@ -21,9 +22,7 @@ class CodeGenerationAgent(CustomNode):
             generated = call_adapter(self.generator, {
                 **data, "feedback": feedback, "attempt": attempt,
             })
-            code = extract_code(generated)
-            if not code:
-                raise ValueError("programmer did not return code")
+            code = ProgrammerCore.parse(generated)
             return {**data, "attempt": attempt, "code": code, "generation_error": None}
         except Exception as exc:  # preserve the retry seam
             return {**data, "attempt": attempt if "attempt" in locals() else 1,

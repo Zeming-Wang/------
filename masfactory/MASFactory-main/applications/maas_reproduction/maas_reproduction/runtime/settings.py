@@ -12,6 +12,11 @@ class ModelSettings:
     base_url_env: str | None = "BASE_URL"
     temperature: float = 0.0
     max_tokens: int = 2048
+    # Monetary rates are deliberately explicit.  A gateway may expose token
+    # usage without exposing its price; in that case cost is unreliable and
+    # policy training must be skipped rather than fabricated.
+    input_cost_per_1k_tokens: float | None = None
+    output_cost_per_1k_tokens: float | None = None
 
 @dataclass(frozen=True)
 class RuntimeSettings:

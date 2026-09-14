@@ -21,7 +21,12 @@ class LossUpdateNode(CustomNode):
                 utility=signal.utility,
             )
             if isinstance(result, dict):
-                return {"update_result": result}
+                # BatchAccumulator returns detached optimizer metadata.  The
+                # signal's utility is still public sample metadata and must
+                # survive a successful optimizer step.
+                update_result = dict(result)
+                update_result["utility"] = signal.utility
+                return {"update_result": update_result}
         return {"update_result": {"update_performed": signal.should_update, "skip_reason": signal.skip_reason, "utility": signal.utility}}
 
 

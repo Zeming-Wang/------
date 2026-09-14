@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Any
 from masfactory.components.custom_node import CustomNode
-from ..workflow_helpers import call_adapter
+from ..programmer_core import ProgrammerCore
 
 
 class ProgrammerExecutionNode(CustomNode):
@@ -15,13 +15,9 @@ class ProgrammerExecutionNode(CustomNode):
             return {**data, "execution_success": False, "execution_output": data["parse_error"],
                     "feedback": data["parse_error"]}
         try:
-            if self.executor is None:
-                raise RuntimeError("programmer executor is not configured")
-            output = call_adapter(self.executor, data)
-            if isinstance(output, dict) and output.get("success", True) is False:
-                error = str(output.get("error", "execution failed"))
-                return {**data, "execution_success": False, "execution_output": error, "feedback": error}
-            text = output if isinstance(output, str) else str(output)
+            success, text, error = ProgrammerCore(generator=None, executor=self.executor).execute(data, data.get("code", ""))
+            if not success:
+                return {**data, "execution_success": False, "execution_output": text, "feedback": error}
             return {**data, "execution_success": True, "execution_output": text, "feedback": ""}
         except Exception as exc:
             return {**data, "execution_success": False, "execution_output": str(exc), "feedback": str(exc)}

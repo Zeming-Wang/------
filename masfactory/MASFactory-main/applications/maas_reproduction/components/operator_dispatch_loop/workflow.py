@@ -14,6 +14,9 @@ from .components.route_cursor_node import RouteCursorNode
 from .components.state_reducer_node import StateReducerNode
 from .components.controller_message import LoopControllerMessage
 from ..attribute_firewall import seal_loop_attributes
+from applications.maas_reproduction.maas_reproduction.schemas import OperatorResult
+from applications.maas_reproduction.maas_reproduction.contracts import EARLY_STOP_OPERATOR
+from masfactory.components.custom_node import CustomNode
 
 
 LOOP_CONTROL_KEYS = {"loop_control": "LoopControllerMessage only."}
@@ -90,6 +93,19 @@ class OperatorDispatchLoop(Loop):
         cursor = self.create_node(RouteCursorNode, "route_cursor")
         switch = self.create_node(LogicSwitch, "operator_switch", pull_keys={}, push_keys={})
         invalid = self.create_node(InvalidOperatorNode, "invalid_operator")
+        early_stop = self.create_node(
+            CustomNode,
+            "early_stop_control",
+            forward=lambda message: {
+                "operator_result": OperatorResult(
+                    EARLY_STOP_OPERATOR,
+                    "control",
+                    metadata={"termination_requested": True},
+                )
+            },
+            pull_keys={},
+            push_keys={},
+        )
         reducer = self.create_node(StateReducerNode, "state_reducer")
 
         self.edge_from_controller(cursor, keys=LOOP_CONTROL_KEYS)
@@ -116,12 +132,35 @@ class OperatorDispatchLoop(Loop):
             switch, invalid,
             {"operator_invocation": "Current operator invocation."},
         )
+        early_stop_edge = self.create_edge(
+            switch,
+            early_stop,
+            {"operator_invocation": "EarlyStop control marker."},
+        )
         switch.condition_binding(
             lambda message, attributes: (
                 (message["operator_invocation"].operator_name
                  if hasattr(message["operator_invocation"], "operator_name")
                  else message["operator_invocation"]["operator_name"])
-                not in operator_nodes
+                == EARLY_STOP_OPERATOR
+            ),
+            early_stop_edge,
+        )
+        self.create_edge(
+            early_stop,
+            reducer,
+            {"operator_result": "Structured EarlyStop control result."},
+        )
+        switch.condition_binding(
+            lambda message, attributes: (
+                (message["operator_invocation"].operator_name
+                 if hasattr(message["operator_invocation"], "operator_name")
+                 else message["operator_invocation"]["operator_name"])
+                not in operator_nodes and (
+                    message["operator_invocation"].operator_name
+                    if hasattr(message["operator_invocation"], "operator_name")
+                    else message["operator_invocation"]["operator_name"]
+                ) != EARLY_STOP_OPERATOR
             ),
             invalid_edge,
         )
