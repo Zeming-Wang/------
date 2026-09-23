@@ -3,8 +3,10 @@ from __future__ import annotations
 from masfactory.components.custom_node import CustomNode
 
 from applications.maas_reproduction.components.architecture_exec_graph.workflow import ArchitectureExecGraph
+from applications.maas_reproduction.components.input_split_node import InputSplitNode
 from applications.maas_reproduction.components.operator_dispatch_loop.workflow import LOOP_CONTROL_KEYS, OperatorDispatchLoop
 from applications.maas_reproduction.maas_reproduction.schemas import ArchitectureRequest, OperatorResult, RouteItem, RoutePlan
+from applications.maas_reproduction.workflow import MaASRootGraph
 
 
 class FakeOperator(CustomNode):
@@ -74,3 +76,39 @@ def test_loop_business_state_stays_in_local_attributes():
 
     assert output["dispatch_state"].route_cursor == 1
     assert "dispatch_state" not in loop._controller.output_keys
+
+
+def test_input_split_has_explicit_empty_attribute_policies():
+    node = InputSplitNode()
+    assert node.pull_keys == {}
+    assert node.push_keys == {}
+
+
+def test_dispatch_loop_removes_stale_state_when_current_input_has_none():
+    loop = OperatorDispatchLoop(operator_registry={})
+    loop._attributes_store["dispatch_state"] = "stale"
+
+    output = loop._forward({"dispatch_state": None})
+
+    assert output["dispatch_state"] is None
+    assert "dispatch_state" not in loop.attributes
+
+
+def test_maas_root_restores_initial_attributes_between_invocations():
+    root = MaASRootGraph("isolated_root", attributes={"persistent": "keep"})
+    passthrough = root.create_node(
+        CustomNode,
+        "passthrough",
+        forward=lambda message: message,
+        pull_keys={},
+        push_keys={},
+    )
+    root.edge_from_entry(passthrough, {"message": "payload"})
+    root.edge_to_exit(passthrough, {"message": "payload"})
+    root.build()
+
+    _, first_attributes = root.invoke({"message": "one"}, attributes={"transient": "first"})
+    _, second_attributes = root.invoke({"message": "two"})
+
+    assert first_attributes == {"persistent": "keep", "transient": "first"}
+    assert second_attributes == {"persistent": "keep"}

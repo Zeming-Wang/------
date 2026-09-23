@@ -1,6 +1,7 @@
 """Explicit runtime dependency assembly for MaAS."""
 from __future__ import annotations
 from pathlib import Path
+from datetime import datetime
 from typing import Any
 from .settings import RuntimeSettings
 from .seed import seed_everything
@@ -19,6 +20,11 @@ from applications.maas_reproduction.components.operators.programmer_graph.progra
 from applications.maas_reproduction.workflow import build_train_root_graph, build_test_root_graph
 from .dependencies import RuntimeDependencies
 from .prompt_loader import PromptLoader
+from .run_logger import RunLogger
+from .source_controller_bundle import (
+    load_source_controller_bundle,
+    validate_query_embedding_fixtures,
+)
 
 RuntimeContext = RuntimeDependencies
 
@@ -48,14 +54,64 @@ class _UsageManager:
                 + completion_tokens / 1000.0 * float(self.output_rate)
             )
 
-def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any = None) -> RuntimeContext:
-    seed_everything(settings.seed)
-    model = create_shared_model(settings.model, fake=fake)
-    embedder = FakeEmbeddingProvider() if fake else EmbeddingProvider(settings.embedding_model)
-    catalog = contracts.operator_catalog_for(settings.dataset)
-    embeddings = embedder.encode_many(catalog)
-    from ..models.controller import MultiLayerController
-    controller = MultiLayerController(embedding_provider=embedder)
+def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any = None,
+                  output_root_override: Path | None = None,
+                  subset: int | None = None,
+                  source_bundle_path: Path | None = None) -> RuntimeContext:
+    # Resolve and create the run directory before loading optional runtime
+    # dependencies, so even bootstrap failures are persisted in error.log.
+    output_root = output_root_override or settings.output_root
+    if not output_root.is_absolute() and output_root.as_posix() == "assets/output":
+        output_root = Path(__file__).parents[2] / "assets" / "output"
+    if output_root_override is None:
+        run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S_%f")
+        output_root = output_root / run_id
+    checkpoint = CheckpointManager(output_root / "checkpoints")
+    artifact_store = ArtifactStore(output_root, results_root=output_root / "results")
+    run_logger = RunLogger(output_root, output_root.name)
+    try:
+        import torch
+
+        seed_everything(settings.seed)
+        model = create_shared_model(settings.model, fake=fake)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        embedder = (
+            FakeEmbeddingProvider()
+            if fake
+            else EmbeddingProvider(settings.embedding_model, device=str(device))
+        )
+        expected_catalog = contracts.operator_catalog_for(settings.dataset)
+        from ..models.controller import MultiLayerController
+        if source_bundle_path is not None:
+            if settings.mode != "test":
+                raise ValueError("source Controller bundles are valid only in test mode")
+            source_bundle = load_source_controller_bundle(
+                source_bundle_path,
+                expected_dataset=settings.dataset,
+                expected_catalog=expected_catalog,
+                expected_embedding_model=settings.embedding_model,
+            )
+            validate_query_embedding_fixtures(source_bundle, embedder)
+            catalog = source_bundle.operator_catalog
+            embeddings = source_bundle.operator_embeddings.to(device)
+            controller = MultiLayerController(
+                input_dim=source_bundle.controller_spec["input_dim"],
+                hidden_dim=source_bundle.controller_spec["hidden_dim"],
+                num_layers=source_bundle.controller_spec["num_layers"],
+                embedding_provider=embedder,
+                device=device,
+            ).to(device)
+            controller.load_state_dict(source_bundle.controller_state_dict, strict=True)
+            controller.requires_grad_(False)
+            controller.eval()
+        else:
+            catalog = expected_catalog
+            embeddings = embedder.encode_many(catalog).to(device)
+            # Move the fully-created policy before the optimizer captures params.
+            controller = MultiLayerController(embedding_provider=embedder, device=device).to(device)
+    except Exception as exc:
+        run_logger.error(stage="bootstrap_dependencies", error=exc)
+        raise
     registry = {name: dict(spec) for name, spec in OPERATOR_REGISTRY.items() if name in catalog}
     usage_manager = manager if manager is not None else _UsageManager(
         input_rate=settings.model.input_cost_per_1k_tokens,
@@ -194,18 +250,10 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
     optimizer = accumulator = None
     if settings.mode == "train":
         try:
-            optimizer = __import__("torch").optim.Adam(controller.parameters(), lr=settings.learning_rate)
+            optimizer = torch.optim.Adam(controller.parameters(), lr=settings.learning_rate)
         except ImportError as exc: raise RuntimeError("training requires PyTorch") from exc
         accumulator = BatchAccumulator(optimizer, settings.batch_size)
     tracker = CostTracker(usage_manager)
-    # Resolve the default relative output path against this reproduction's
-    # own assets directory, not the process working directory.  This keeps
-    # checkpoints and results under applications/maas_reproduction/assets.
-    output_root = settings.output_root
-    if not output_root.is_absolute() and output_root.as_posix() == "assets/output":
-        output_root = Path(__file__).parents[2] / "assets" / "output"
-    checkpoint = CheckpointManager(output_root / "checkpoints")
-    artifact_store = ArtifactStore(output_root / "results")
     kwargs = dict(policy_controller=controller, operator_embeddings=embeddings, operator_catalog=catalog,
                   operator_registry=registry, dataset=settings.dataset, generate=bootstrap_generate_adapter, programmer=bootstrap_programmer_adapter,
                   scorer=scorer, cost_tracker=tracker, batch_accumulator=accumulator)
@@ -231,11 +279,25 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
             "test": None,
             "canonical_solution": None,
         }]
+    if subset is not None:
+        if isinstance(subset, bool) or not isinstance(subset, int) or subset <= 0:
+            raise ValueError("subset must be a positive int")
+        # A debug-only view of the dataset: the epoch bookkeeping stays
+        # identical, the run just completes an epoch on fewer samples.
+        dataset = dataset[:subset]
     runner = DatasetRunner(graph=root, dataset=dataset, epochs=settings.epochs,
                            batch_accumulator=accumulator, checkpoint_manager=checkpoint,
                            controller=controller if settings.mode == "train" else None,
                            optimizer=optimizer, operator_catalog=catalog,
-                           artifact_store=artifact_store)
+                           artifact_store=artifact_store,
+                           run_logger=run_logger,
+                           run_config={"dataset": settings.dataset, "split": settings.split,
+                                       "subset": subset,
+                                       "mode": settings.mode, "sample": settings.sample,
+                                       "batch_size": settings.batch_size, "epochs": settings.epochs,
+                                       "seed": settings.seed, "model_name": settings.model.model_name,
+                                       "embedding_model": settings.embedding_model,
+                                       "run_id": output_root.name})
     return RuntimeContext(settings, model, embedder, controller, embeddings, tuple(catalog), registry, scorer, tracker, checkpoint, optimizer, accumulator, root, runner, artifact_store)
 
 __all__ = ["RuntimeContext", "build_runtime"]

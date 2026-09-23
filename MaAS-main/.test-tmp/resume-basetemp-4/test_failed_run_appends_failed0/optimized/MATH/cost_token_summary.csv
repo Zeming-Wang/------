@@ -1,0 +1,2 @@
+timestamp,mode,dataset,sample_count,problem_count,average_score,prompt_tokens,completion_tokens,total_tokens,total_cost,status
+2026-09-22 19:56:52,test,MATH,3,2,,120,30,150,0.01234568,failed

@@ -10,7 +10,7 @@ class InputSplitNode(CustomNode):
     """Split one dataset envelope into execution and evaluation contexts."""
 
     def __init__(self, name: str = "input_split", **kwargs: Any) -> None:
-        super().__init__(name=name, forward=self._split, **kwargs)
+        super().__init__(name=name, forward=self._split, pull_keys={}, push_keys={}, **kwargs)
 
     @staticmethod
     def _split(message: dict[str, Any]) -> dict[str, object]:

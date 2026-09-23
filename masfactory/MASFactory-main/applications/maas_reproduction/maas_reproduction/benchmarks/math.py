@@ -32,11 +32,33 @@ class MATHBenchmark(BaseBenchmark):
         a, b = self._number(actual), self._number(expected)
         if a is not None and b is not None and isclose(a, b, abs_tol=1e-3):
             return 1.0
-        # Keep the adapter dependency-light; symbolic equality is optional.
+        # Keep imports lazy, while preserving the source benchmark's parser
+        # order and numerical fallback.
         try:
-            from sympy import simplify
+            from sympy import N, simplify
+            from sympy.parsing.latex import parse_latex
             from sympy.parsing.sympy_parser import parse_expr
-            if simplify(parse_expr(actual) - parse_expr(expected)) == 0:
+        except ImportError as exc:
+            raise RuntimeError(
+                "MATH benchmark requires sympy==1.13.1; install the project dependencies."
+            ) from exc
+
+        def parse(value: str):
+            for parser in (parse_latex, parse_expr):
+                try:
+                    return parser(value)
+                except Exception:
+                    pass
+            return value
+
+        parsed_actual, parsed_expected = parse(actual), parse(expected)
+        try:
+            if simplify(parsed_actual - parsed_expected) == 0:
+                return 1.0
+        except Exception:
+            pass
+        try:
+            if isclose(float(N(parsed_actual)), float(N(parsed_expected)), abs_tol=1e-3):
                 return 1.0
         except Exception:
             pass

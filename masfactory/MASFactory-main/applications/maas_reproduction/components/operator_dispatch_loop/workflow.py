@@ -59,6 +59,9 @@ class OperatorDispatchLoop(Loop):
         only a ``LoopControllerMessage``.
         """
         state = input.get("dispatch_state")
+        # Loop.reset_gate() deliberately resets execution gates only. Business
+        # state is invocation-local, so remove the previous sample explicitly.
+        self._attributes_store.pop("dispatch_state", None)
         if state is None:
             return {
                 "dispatch_state": None,

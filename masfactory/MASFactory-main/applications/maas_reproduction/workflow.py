@@ -12,13 +12,33 @@ from applications.maas_reproduction.components.sample_result_node import SampleR
 from applications.maas_reproduction.components.architecture_exec_graph import ArchitectureExecGraph
 
 
+class MaASRootGraph(RootGraph):
+    """RootGraph whose invocation attributes are isolated per dataset sample."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._initial_attributes = self._attributes_store.copy()
+
+    def build(self) -> None:
+        if self._is_built:
+            return
+        super().build()
+        # Preserve all legitimate construction/build-time attributes. Only
+        # invocation overlays are discarded before the next sample.
+        self._initial_attributes = self._attributes_store.copy()
+
+    def invoke(self, input: dict, attributes: dict[str, object] | None = None):
+        self._attributes_store = self._initial_attributes.copy()
+        return super().invoke(input, attributes)
+
+
 def _build_root(*, train: bool, scorer: object | None = None,
                 batch_accumulator: object | None = None, metrics: object | None = None,
                 policy_controller: object | None = None, operator_embeddings: object | None = None,
                 operator_catalog: object | None = None, programmer: object | None = None,
                 generate: object | None = None, operator_registry: object | None = None,
                 dataset: str = "MATH", cost_tracker: object | None = None) -> RootGraph:
-    root = RootGraph(name="maas_train" if train else "maas_test")
+    root = MaASRootGraph(name="maas_train" if train else "maas_test")
     split = root.create_node(InputSplitNode, name="input_split")
     architecture = root.create_node(
         ArchitectureExecGraph,
@@ -73,4 +93,4 @@ def build_test_root_graph(*, scorer: object | None = None,
     )
 
 
-__all__ = ["build_train_root_graph", "build_test_root_graph"]
+__all__ = ["MaASRootGraph", "build_train_root_graph", "build_test_root_graph"]

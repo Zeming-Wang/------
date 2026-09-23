@@ -30,11 +30,33 @@ def test_multi_generate_cot_calls_adapter_three_times():
     assert result.candidates == ("1", "2", "3")
 
 
-def test_sc_ensemble_invalid_letter_uses_structured_fallback():
+def test_multi_generate_cot_takes_at_most_one_candidate_per_call():
+    calls = []
+    result = run(
+        MultiGenerateCoTGraph(
+            operator=lambda _: calls.append(1) or {"candidates": (f"{len(calls)}a", f"{len(calls)}b")}
+        ),
+        invocation("MultiGenerateCoT"),
+    )
+
+    assert len(calls) == 3
+    assert result.candidates == ("1a", "2a", "3a")
+
+
+def test_sc_ensemble_invalid_letter_is_structured_failure_without_solution():
     result = run(ScEnsembleGraph(operator=lambda _: {"solution_letter": "Z"}),
                  invocation("ScEnsemble", candidates=("A", "B")))
-    assert result.status == "fallback"
-    assert result.solution == "A"
+    assert result.status == "failed"
+    assert result.solution is None
+    assert result.candidates == ("A", "B")
+    assert result.metadata["error_type"] == "ValueError"
+
+
+def test_sc_ensemble_empty_candidates_is_structured_failure():
+    result = run(ScEnsembleGraph(operator=lambda _: {"solution_letter": "A"}),
+                 invocation("ScEnsemble"))
+    assert result.status == "failed"
+    assert result.solution is None
 
 
 def test_programmer_retries_inside_operator_and_returns_timeout_result():

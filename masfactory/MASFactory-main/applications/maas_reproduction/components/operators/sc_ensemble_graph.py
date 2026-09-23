@@ -24,7 +24,11 @@ class ScEnsembleGraph(Graph):
         invocation = data.get("operator_invocation", data)
         candidates = tuple(invocation.candidates) if hasattr(invocation, "candidates") else tuple(invocation.get("candidates", ()))
         if not candidates:
-            return {"operator_result": OperatorResult("ScEnsemble", "empty_candidates")}
+            error = ValueError("ScEnsemble requires at least one candidate")
+            return {"operator_result": OperatorResult(
+                "ScEnsemble", "failed", execution_output=str(error),
+                metadata={"error_type": type(error).__name__, "error": str(error)},
+            )}
         try:
             answer = _call(self.adapter, {"solutions": {chr(65+i): value for i, value in enumerate(candidates)},
                                           "candidates": candidates, "problem": getattr(invocation, "problem", "")})
@@ -34,8 +38,11 @@ class ScEnsembleGraph(Graph):
                 raise ValueError("invalid solution_letter")
             return {"operator_result": OperatorResult("ScEnsemble", "success", solution=candidates[index], candidates=candidates)}
         except Exception as exc:
-            return {"operator_result": OperatorResult("ScEnsemble", "fallback", solution=candidates[0], candidates=candidates,
-                                                        metadata={"error_type": type(exc).__name__, "error": str(exc)})}
+            return {"operator_result": OperatorResult(
+                "ScEnsemble", "failed", candidates=candidates,
+                execution_output=str(exc),
+                metadata={"error_type": type(exc).__name__, "error": str(exc)},
+            )}
 
 
 ScEnsemble = ScEnsembleGraph

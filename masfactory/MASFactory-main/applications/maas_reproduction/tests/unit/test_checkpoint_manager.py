@@ -54,3 +54,32 @@ def test_live_policy_tensor_is_never_accepted(tmp_path):
         isinstance(value, torch.Tensor) and value.requires_grad
         for value in payload["controller"].values()
     )
+
+
+def test_checkpoint_refuses_to_capture_a_partial_batch(tmp_path):
+    model = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    manager = CheckpointManager(tmp_path)
+    with pytest.raises(CheckpointError, match="batch boundary"):
+        manager.save(model, optimizer, cursor=1, epoch=0,
+                     operator_catalog=("Generate",), pending_gradients=2)
+
+
+def test_checkpoint_records_that_it_sits_on_a_batch_boundary(tmp_path):
+    model = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    manager = CheckpointManager(tmp_path)
+    manager.save(model, optimizer, cursor=0, epoch=0, operator_catalog=("Generate",))
+    assert manager.load()["pending_gradient_count"] == 0
+
+
+def test_load_rejects_a_checkpoint_taken_inside_a_batch(tmp_path):
+    model = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    manager = CheckpointManager(tmp_path)
+    path = manager.save(model, optimizer, cursor=0, epoch=0, operator_catalog=("Generate",))
+    payload = manager.load()
+    payload["pending_gradient_count"] = 3
+    torch.save(payload, path)
+    with pytest.raises(CheckpointError, match="batch boundary"):
+        manager.load()

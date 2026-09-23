@@ -100,8 +100,15 @@ class CheckpointManager:
         operator_catalog: Sequence[str],
         path: str | os.PathLike[str] | None = None,
         metadata: Mapping[str, Any] | None = None,
+        pending_gradients: int = 0,
     ) -> Path:
-        """Persist a checkpoint, atomically replacing the target file."""
+        """Persist a checkpoint, atomically replacing the target file.
+
+        ``pending_gradients`` is the number of policy-gradient tensors that are
+        still waiting for an optimizer step.  Only ``0`` is serializable: the
+        accumulator is never persisted, so a checkpoint taken in the middle of a
+        batch would silently drop those gradients on resume.
+        """
         if isinstance(cursor, bool) or not isinstance(cursor, int) or cursor < 0:
             raise ValueError("cursor must be a non-negative int")
         if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 0:
@@ -111,6 +118,10 @@ class CheckpointManager:
             raise ValueError("operator_catalog must contain non-empty names")
         if not hasattr(controller, "state_dict") or not hasattr(optimizer, "state_dict"):
             raise TypeError("controller and optimizer must expose state_dict()")
+        if isinstance(pending_gradients, bool) or not isinstance(pending_gradients, int) or pending_gradients < 0:
+            raise ValueError("pending_gradients must be a non-negative int")
+        if pending_gradients:
+            raise CheckpointError("checkpoint must be saved at a batch boundary")
         payload = {
             "format_version": self.FORMAT_VERSION,
             "controller": _detached_copy(controller.state_dict()),
@@ -120,10 +131,11 @@ class CheckpointManager:
             "operator_catalog": catalog,
             "rng": _rng_state(),
             "metadata": dict(metadata or {}),
+            "pending_gradient_count": pending_gradients,
         }
         if _contains_live_tensor(payload):
             raise CheckpointError("checkpoint contains a live autograd Tensor")
-        target = Path(path) if path is not None else self.directory / "checkpoint.pt"
+        target = Path(path) if path is not None else self.directory / "latest.pt"
         target.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
         os.close(fd)
@@ -149,7 +161,7 @@ class CheckpointManager:
     ) -> dict[str, Any]:
         """Load state, optionally restoring controller/optimizer and RNG."""
         import torch
-        target = Path(path) if path is not None else self.directory / "checkpoint.pt"
+        target = Path(path) if path is not None else self.directory / "latest.pt"
         try:
             try:
                 payload = torch.load(target, map_location="cpu", weights_only=False)
@@ -159,6 +171,11 @@ class CheckpointManager:
             raise CheckpointError(f"unable to load checkpoint: {target}") from exc
         if not isinstance(payload, Mapping) or payload.get("format_version") != self.FORMAT_VERSION:
             raise CheckpointError("unsupported or malformed checkpoint")
+        pending = payload.get("pending_gradient_count", 0)
+        if isinstance(pending, bool) or not isinstance(pending, int) or pending < 0:
+            raise CheckpointError("malformed pending_gradient_count in checkpoint")
+        if pending:
+            raise CheckpointError("checkpoint was not saved at a batch boundary")
         catalog = tuple(payload.get("operator_catalog", ()))
         if expected_operator_catalog is not None and catalog != tuple(expected_operator_catalog):
             raise CheckpointError("operator catalog does not match checkpoint")

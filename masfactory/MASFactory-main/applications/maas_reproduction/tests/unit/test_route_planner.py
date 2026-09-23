@@ -51,6 +51,19 @@ def test_first_layer_early_stop_is_generate_with_adjustment():
     assert result.policy_log_prob.value == -2.0
 
 
+def test_first_layer_generate_family_selection_is_not_replaced():
+    catalog = ("Generate", "GenerateCoT", "Programmer", "SelfRefine", "EarlyStop")
+    node = RoutePlannerNode(
+        Controller(([Scalar(-0.5)], [["GenerateCoT"]])),
+        object(),
+        catalog,
+    )
+
+    result = invoke(node, ArchitectureRequest("p", 0))["route_plan"]
+
+    assert [item.operator_name for item in result.items] == ["GenerateCoT"]
+
+
 def test_later_early_stop_is_marker_and_truncates_following_layers():
     node = RoutePlannerNode(Controller(([Scalar(-1.0)] * 3, [["Generate"], ["EarlyStop"], ["SelfRefine"]])), object(), CATALOG)
     result = invoke(node, ArchitectureRequest("p", 0))["route_plan"]

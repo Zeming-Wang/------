@@ -42,6 +42,12 @@ def parse_args():
     parser.add_argument("--is_test",type=bool, default=False, help="choice the optimizer mode")
     parser.add_argument("--is_textgrad", type = bool, default=False, help="choice to use textgrad")
     parser.add_argument("--lr", type=float, default=0.01, help="learning rate")
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Resume training from a batch checkpoint",
+    )
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -76,6 +82,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         lr=args.lr,
         is_textgrad=args.is_textgrad,
+        resume=args.resume,
     )
     #将相关的超参数传入到optimizer之中
 

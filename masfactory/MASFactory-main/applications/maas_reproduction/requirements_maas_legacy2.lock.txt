@@ -1,0 +1,3 @@
+# maas_legacy2 is an exact clone of mas_env (verified on 2026-09-22).
+# Keep this file beside requirements_mas_env.lock.txt.
+-r requirements_mas_env.lock.txt

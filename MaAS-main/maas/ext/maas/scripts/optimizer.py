@@ -3,6 +3,7 @@ import time
 import torch
 import os
 import numpy as np
+from pathlib import Path
 from typing import List, Literal
 
 from pydantic import BaseModel, Field
@@ -38,6 +39,7 @@ class Optimizer:
         batch_size: int = 4,
         lr: float = 0.01,
         is_textgrad: bool = False,
+        resume: str = None,
     ) -> None:
         self.optimize_llm_config = opt_llm_config
         self.execute_llm_config = exec_llm_config
@@ -59,7 +61,53 @@ class Optimizer:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.controller = MultiLayerController(device=self.device).to(self.device)
         #将控制器实例化 
-        self.optimizer = torch.optim.Adam(self.controller.parameters(), lr=self.lr)          
+        self.optimizer = torch.optim.Adam(self.controller.parameters(), lr=self.lr)
+        self.resume_repetition = 1
+        self.resume_next_batch_idx = 0
+        self.resume_total_cost = 0.0
+        if resume is not None:
+            self._load_resume_checkpoint(resume)
+
+    def _load_resume_checkpoint(self, checkpoint_path: str) -> None:
+        path = Path(checkpoint_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Resume checkpoint not found: {path}")
+
+        try:
+            checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        except TypeError:
+            checkpoint = torch.load(path, map_location=self.device)
+
+        required = {
+            "controller",
+            "optimizer",
+            "repetition",
+            "next_batch_idx",
+            "total_cost",
+        }
+        if not isinstance(checkpoint, dict) or not required.issubset(checkpoint):
+            missing = sorted(required.difference(checkpoint if isinstance(checkpoint, dict) else {}))
+            raise ValueError(f"Invalid resume checkpoint; missing fields: {missing}")
+
+        repetition = checkpoint["repetition"]
+        next_batch_idx = checkpoint["next_batch_idx"]
+        total_cost = checkpoint["total_cost"]
+        if isinstance(repetition, bool) or not isinstance(repetition, int) or repetition < 1:
+            raise ValueError("Resume checkpoint repetition must be a positive integer")
+        if isinstance(next_batch_idx, bool) or not isinstance(next_batch_idx, int) or next_batch_idx < 0:
+            raise ValueError("Resume checkpoint next_batch_idx must be a non-negative integer")
+        if isinstance(total_cost, bool) or not isinstance(total_cost, (int, float)) or total_cost < 0:
+            raise ValueError("Resume checkpoint total_cost must be a non-negative number")
+
+        self.controller.load_state_dict(checkpoint["controller"])
+        self.optimizer.load_state_dict(checkpoint["optimizer"])
+        self.resume_repetition = repetition
+        self.resume_next_batch_idx = next_batch_idx
+        self.resume_total_cost = float(total_cost)
+        logger.info(
+            f"Resumed training from {path}: repetition={repetition}, "
+            f"next_batch_idx={next_batch_idx}, total_cost={self.resume_total_cost}"
+        )
 
     def optimize(self, mode: OptimizerType = "Graph"):
         if mode == "Test":
@@ -79,6 +127,14 @@ class Optimizer:
             try:
                 score = loop.run_until_complete(self._optimize_graph_maas()) 
                 break
+            except KeyboardInterrupt:
+                try:
+                    self._save_interrupted_checkpoint()
+                except Exception as checkpoint_error:
+                    logger.error(
+                        f"Failed to save interrupted checkpoint: {checkpoint_error}"
+                    )
+                raise
             except Exception as e:
                 retry_count += 1
                 logger.info(f"Error occurred: {e}. Retrying... (Attempt {retry_count}/{max_retries})")
@@ -97,6 +153,47 @@ class Optimizer:
         round += 1
         
         time.sleep(5)
+
+    def _save_interrupted_checkpoint(self) -> Path:
+        checkpoint_dir = (
+            Path(self.root_path)
+            / "train"
+            / f"round_{self.round}"
+            / "checkpoints"
+        )
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        latest_path = checkpoint_dir / "latest.pt"
+        interrupted_path = checkpoint_dir / "interrupted.pt"
+        temporary_path = interrupted_path.with_suffix(interrupted_path.suffix + ".tmp")
+
+        payload = None
+        if latest_path.is_file():
+            try:
+                payload = torch.load(latest_path, map_location=self.device, weights_only=False)
+            except TypeError:
+                payload = torch.load(latest_path, map_location=self.device)
+            except Exception as error:
+                logger.info(f"Could not reuse latest checkpoint during interrupt: {error}")
+
+        if not isinstance(payload, dict):
+            total_cost = self.resume_total_cost
+            if self.graph is not None:
+                try:
+                    total_cost = float(self.graph.llm.get_costs().total_cost)
+                except Exception:
+                    pass
+            payload = {
+                "controller": self.controller.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "repetition": self.resume_repetition,
+                "next_batch_idx": self.resume_next_batch_idx,
+                "total_cost": total_cost,
+            }
+
+        torch.save(payload, temporary_path)
+        os.replace(temporary_path, interrupted_path)
+        logger.info(f"Interrupted training checkpoint saved to {interrupted_path}")
+        return interrupted_path
 
     #是整个训练的主循环
     async def _optimize_graph_maas(self):
@@ -118,7 +215,10 @@ class Optimizer:
             "dataset": self.dataset, 
             "optimizer": self.optimizer,
             "sample": self.sample,
-            "is_textgrad": self.is_textgrad
+            "is_textgrad": self.is_textgrad,
+            "resume_repetition": self.resume_repetition,
+            "resume_next_batch_idx": self.resume_next_batch_idx,
+            "resume_total_cost": self.resume_total_cost,
         }
 
         avg_score = await self.evaluation_utils.evaluate_graph_maas(self, directory, data, initial=False, params=params)

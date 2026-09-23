@@ -30,7 +30,9 @@ class MultiGenerateCoTGraph(Graph):
                 if result.solution:
                     responses.append(result.solution)
                 elif result.candidates:
-                    responses.extend(result.candidates)
+                    # Source MaAS performs three independent calls and each
+                    # call contributes one response at most.
+                    responses.append(result.candidates[0])
             return {"operator_result": OperatorResult("MultiGenerateCoT", "success",
                                                         solution=responses[0] if responses else None,
                                                         candidates=tuple(responses))}

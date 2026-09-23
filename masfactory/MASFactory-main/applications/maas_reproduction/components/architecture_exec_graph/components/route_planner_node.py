@@ -131,10 +131,13 @@ class RoutePlannerNode(CustomNode):
             if layer_index == 0:
                 if any(name.lower() == EARLY_STOP_OPERATOR.lower() for name in names):
                     names = [GENERATE_OPERATOR]
-                elif GENERATE_OPERATOR not in names:
+                elif not any("generate" in name.lower() for name in names):
                     names = [GENERATE_OPERATOR]
-                else:
-                    generate_at = next(i for i, name in enumerate(names) if name == GENERATE_OPERATOR)
+                elif "generate" not in names[0].lower():
+                    generate_at = next(
+                        i for i, name in enumerate(names)
+                        if "generate" in name.lower()
+                    )
                     names = [names[generate_at], *names[:generate_at], *names[generate_at + 1 :]]
             for position, name in enumerate(names):
                 flattened.append(RouteItem(len(flattened), layer_index, position, name,

@@ -35,7 +35,8 @@ class RuntimeSettings:
 
 def load_settings(config_root: str | Path, *, mode_override: str | None = None,
                   dataset_override: str | None = None, split_override: str | None = None,
-                  sample_override: int | None = None) -> RuntimeSettings:
+                  sample_override: int | None = None,
+                  epochs_override: int | None = None) -> RuntimeSettings:
     root = Path(config_root)
     def read(name: str) -> dict:
         path = root / name
@@ -53,9 +54,13 @@ def load_settings(config_root: str | Path, *, mode_override: str | None = None,
         value = experiment.get(name, default)
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0: raise ValueError(f"{name} must be positive")
         return value
-    sample = sample_override if sample_override is not None else positive("sample", 1)
-    if isinstance(sample, bool) or not isinstance(sample, int) or sample <= 0:
-        raise ValueError("sample must be positive")
-    return RuntimeSettings(dataset, split, mode, positive("round_number", 1), sample, positive("batch_size", 1), positive("epochs", 1), int(experiment.get("seed", 42)), float(experiment.get("learning_rate", 1e-3)), str(experiment.get("embedding_model", RuntimeSettings.embedding_model)), Path(experiment.get("output_root", "assets/output")), model)
+    def override(name: str, value: int | None, default: int) -> int:
+        resolved = value if value is not None else positive(name, default)
+        if isinstance(resolved, bool) or not isinstance(resolved, int) or resolved <= 0:
+            raise ValueError(f"{name} must be positive")
+        return resolved
+    sample = override("sample", sample_override, 1)
+    epochs = override("epochs", epochs_override, 1)
+    return RuntimeSettings(dataset, split, mode, positive("round_number", 1), sample, positive("batch_size", 1), epochs, int(experiment.get("seed", 42)), float(experiment.get("learning_rate", 1e-3)), str(experiment.get("embedding_model", RuntimeSettings.embedding_model)), Path(experiment.get("output_root", "assets/output")), model)
 
 __all__ = ["ModelSettings", "RuntimeSettings", "load_settings"]

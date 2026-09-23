@@ -4,7 +4,7 @@
   "mode": "test",
   "round_number": 1,
   "sample": 2,
-  "batch_size": 1,
+  "batch_size": 4,
   "epochs": 1,
   "seed": 42,
   "learning_rate": 0.001,

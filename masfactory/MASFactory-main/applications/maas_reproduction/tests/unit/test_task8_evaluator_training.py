@@ -10,6 +10,12 @@ def test_scorers_follow_dataset_rules():
     assert MATHBenchmark().score("therefore \\boxed{2}", "\\boxed{2.0}") == 1.0
 
 
+def test_math_scorer_supports_source_latex_and_numeric_symbolic_fallbacks():
+    scorer = MATHBenchmark()
+    assert scorer.score(r"\boxed{\frac{1}{2}}", r"\boxed{\frac{2}{4}}") == 1.0
+    assert scorer.score(r"\boxed{\sqrt{2}}", r"\boxed{1.4142135623730951}") == 1.0
+
+
 def test_evaluator_failure_is_unreliable_and_training_skips():
     node = EvaluatorNode(scorer=GSM8KBenchmark())
     result = node._forward({
