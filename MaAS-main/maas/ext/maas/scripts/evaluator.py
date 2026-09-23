@@ -40,7 +40,16 @@ class Evaluator:
             va_list = None 
         else:
             va_list = None
-        return await benchmark.run_evaluation(configured_graph, va_list, is_test, params["sample"], params["is_textgrad"])
+        return await benchmark.run_evaluation(
+            configured_graph,
+            va_list,
+            is_test,
+            params["sample"],
+            params["is_textgrad"],
+            start_repetition=params.get("resume_repetition", 1),
+            start_batch_idx=params.get("resume_next_batch_idx", 0),
+            resume_total_cost=params.get("resume_total_cost", 0.0),
+        )
 
     async def _configure_graph(self, dataset, graph, params: dict):
         controller = params.get("controller")

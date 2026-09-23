@@ -1,0 +1,67 @@
+[
+    {
+        "round": 5,
+        "score": 0.3333333333333333,
+        "avg_cost": 0.0017563466666666663,
+        "total_cost": 0.005269039999999999,
+        "token": 22781,
+        "prompt_tokens": 7926,
+        "completion_tokens": 14855,
+        "total_tokens": 22781,
+        "textgrad_applied": false,
+        "textgrad_events": [],
+        "time": "2026-08-11 21:09:44"
+    },
+    {
+        "round": 6,
+        "score": 0.3333333333333333,
+        "avg_cost": 0.002602413333333333,
+        "total_cost": 0.00780724,
+        "token": 36007,
+        "prompt_tokens": 16248,
+        "completion_tokens": 19759,
+        "total_tokens": 36007,
+        "textgrad_applied": false,
+        "textgrad_events": [],
+        "time": "2026-08-12 22:13:51"
+    },
+    {
+        "round": 6,
+        "score": 0.3333333333333333,
+        "avg_cost": 0.004558726666666665,
+        "total_cost": 0.013676179999999996,
+        "token": 68234,
+        "prompt_tokens": 38781,
+        "completion_tokens": 29453,
+        "total_tokens": 68234,
+        "textgrad_applied": false,
+        "textgrad_events": [],
+        "time": "2026-08-12 22:34:11"
+    },
+    {
+        "round": 1,
+        "score": 0.6,
+        "avg_cost": 0.002837716,
+        "total_cost": 0.014188580000000001,
+        "token": 70366,
+        "prompt_tokens": 39385,
+        "completion_tokens": 30981,
+        "total_tokens": 70366,
+        "textgrad_applied": false,
+        "textgrad_events": [],
+        "time": "2026-08-13 22:12:57"
+    },
+    {
+        "round": 1,
+        "score": 0.8,
+        "avg_cost": 0.002276512,
+        "total_cost": 0.01138256,
+        "token": 57054,
+        "prompt_tokens": 32804,
+        "completion_tokens": 24250,
+        "total_tokens": 57054,
+        "textgrad_applied": false,
+        "textgrad_events": [],
+        "time": "2026-08-13 22:34:11"
+    }
+]

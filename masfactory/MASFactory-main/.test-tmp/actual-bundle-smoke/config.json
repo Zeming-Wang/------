@@ -1,0 +1,13 @@
+{
+  "dataset": "MATH",
+  "split": "test",
+  "subset": 1,
+  "mode": "test",
+  "sample": 1,
+  "batch_size": 1,
+  "epochs": 1,
+  "seed": 42,
+  "model_name": "gpt-4o-mini",
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "run_id": "actual-bundle-smoke"
+}

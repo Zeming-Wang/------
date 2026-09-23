@@ -1,151 +1,99 @@
-"""MaAS multi-layer controller used to sample architecture operators."""
-
+"""Trainable four-layer MaAS policy controller."""
 from __future__ import annotations
+from typing import Any, Sequence
+from ..contracts import EARLY_STOP_OPERATOR, GENERATE_OPERATOR, OPERATOR_SELECTION_THRESHOLD, FIRST_LAYER_EARLY_STOP_LOG_PROB_ADJUSTMENT
 
-import torch
-import torch.nn.functional as F
-
-from maas_reproduction.models.utils import SentenceEncoder, sample_operators
-
-sentence_encoder = SentenceEncoder()
-
-
-class OperatorSelector(torch.nn.Module):
-    def __init__(
-        self,
-        input_dim: int = 384,
-        hidden_dim: int = 32,
-        device=None,
-        is_first_layer: bool = False,
-    ):
-        super().__init__()
-        self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.is_first_layer = is_first_layer
-        if self.is_first_layer:
-            self.operator_encoder = torch.nn.Linear(input_dim, hidden_dim)
-        else:
-            self.operator_encoder = torch.nn.Linear(input_dim * 2, hidden_dim)
-        self.query_encoder = torch.nn.Linear(input_dim, hidden_dim)
-
-    def forward(
-        self,
-        query_embed: torch.Tensor,
-        operators_embed: torch.Tensor,
-        prev_operators_embed: torch.Tensor = None,
-    ):
-        if query_embed.dim() == 1:
-            query_embed = query_embed.unsqueeze(0)
-
-        query_embed = self.query_encoder(query_embed)
-        query_embed = F.normalize(query_embed, p=2, dim=1)
-
-        if prev_operators_embed is not None and self.is_first_layer is False:
-            prev_operator = prev_operators_embed[0].unsqueeze(0)
-            prev_expanded = prev_operator.expand(operators_embed.size(0), -1)
-            concat_embed = torch.cat([operators_embed, prev_expanded], dim=1)
-            all_operators_embed = self.operator_encoder(concat_embed)
-        else:
-            all_operators_embed = self.operator_encoder(operators_embed)
-
-        all_operators_embed = F.normalize(all_operators_embed, p=2, dim=1)
-
-        scores = torch.matmul(query_embed, all_operators_embed.T)
-
-        probs = F.softmax(scores, dim=1)
-        log_probs = F.log_softmax(scores, dim=1)
-
-        return log_probs, probs
+def _torch():
+    try:
+        import torch, torch.nn.functional as F
+        return torch, F
+    except ImportError as exc: raise ImportError("MultiLayerController requires PyTorch") from exc
 
 
-class MultiLayerController(torch.nn.Module):
-    def __init__(
-        self,
-        input_dim: int = 384,
-        hidden_dim: int = 32,
-        num_layers: int = 4,
-        device=None,
-    ):
-        super().__init__()
-        self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def sample_operators(probs, threshold: float = 0.25):
+    """Mirror the source MaAS cumulative, without-replacement sampler."""
+    torch, _ = _torch()
+    device = probs.device
+    probs = probs.detach()
+    num_ops = probs.size(0)
+    if num_ops == 0:
+        return torch.tensor([], dtype=torch.long, device=device)
 
-        self.layers = torch.nn.ModuleList(
-            [
-                OperatorSelector(input_dim, hidden_dim, device=self.device, is_first_layer=(i == 0))
-                for i in range(num_layers)
-            ]
-        )
+    selected = torch.tensor([], dtype=torch.long, device=device)
+    cumulative = 0.0
+    remaining = torch.arange(num_ops, device=device)
+    while cumulative < threshold and remaining.numel() > 0:
+        sampled = torch.multinomial(probs[remaining], num_samples=1)
+        index = remaining[sampled].squeeze()
+        if not torch.any(selected == index):
+            selected = torch.cat([selected, index.unsqueeze(0)])
+            cumulative += probs[index].item()
+        mask = torch.ones_like(remaining, dtype=torch.bool)
+        mask[sampled] = False
+        remaining = remaining[mask]
 
-    def forward(self, query, operators_embedding, selection_operator_names, log_path=None):
-        query_embedding = sentence_encoder(query).to(self.device)
-        operators_embedding = operators_embedding.to(self.device)
-        log_probs_layers = []
-        selected_names_layers = []
-        prev_operators = None
+    if selected.numel() == 0:
+        selected = probs.argmax().unsqueeze(0)
+    return selected
 
-        for layer_idx, layer in enumerate(self.layers):
-            if layer_idx == 0:
-                log_probs, probs = layer(query_embedding, operators_embedding)
-            else:
-                log_probs, probs = layer(query_embedding, operators_embedding, prev_operators)
+class OperatorSelector:
+    def __new__(cls, *args, **kwargs):
+        torch, _ = _torch()
+        class _Selector(torch.nn.Module):
+            def __init__(self, input_dim=384, hidden_dim=32, is_first_layer=False):
+                super().__init__(); self.is_first_layer=is_first_layer
+                self.operator_encoder=torch.nn.Linear(input_dim if is_first_layer else input_dim*2, hidden_dim)
+                self.query_encoder=torch.nn.Linear(input_dim, hidden_dim)
+            def forward(self, query, operators, previous=None):
+                _, F = _torch(); query= query.unsqueeze(0) if query.dim()==1 else query
+                q=F.normalize(self.query_encoder(query),p=2,dim=1)
+                op=operators
+                if previous is not None and not self.is_first_layer:
+                    op=torch.cat([op, previous[0].unsqueeze(0).expand(op.size(0),-1)],dim=1)
+                op=F.normalize(self.operator_encoder(op),p=2,dim=1); scores=q@op.T
+                return torch.log_softmax(scores,dim=1), torch.softmax(scores,dim=1)
+        return _Selector(*args, **kwargs)
 
-            probs_1d = probs.squeeze(0)
-            log_probs_1d = log_probs.squeeze(0)
+class MultiLayerController:
+    def __new__(cls, input_dim=384, hidden_dim=32, num_layers=4, device=None, embedding_provider=None):
+        torch, _ = _torch()
+        class _Controller(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.device = torch.device(device) if device is not None else torch.device(
+                    "cuda" if torch.cuda.is_available() else "cpu"
+                )
+                self.embedding_provider=embedding_provider
+                self.layers=torch.nn.ModuleList([OperatorSelector(input_dim,hidden_dim,is_first_layer=i==0) for i in range(num_layers)])
+                # All policy modules must exist before the module tree is moved.
+                self.to(self.device)
+            def forward(self, query: str, operators_embedding, selection_operator_names: Sequence[str], log_path=None):
+                if self.embedding_provider is None: raise ValueError("embedding_provider is required")
+                if GENERATE_OPERATOR not in selection_operator_names:
+                    raise ValueError("selection_operator_names must contain Generate")
+                q=self.embedding_provider.encode(query).to(self.device); ops=operators_embedding.to(self.device); logs=[]; names=[]; prev=None
+                for i, layer in enumerate(self.layers):
+                    lp, probs=layer(q,ops,prev); p=probs.squeeze(0)
+                    selected=sample_operators(p, threshold=OPERATOR_SELECTION_THRESHOLD)
+                    selected_names=[selection_operator_names[int(x)] for x in selected]
+                    penalty=False
+                    if i==0 and any(n.lower()==EARLY_STOP_OPERATOR.lower() for n in selected_names):
+                        selected=torch.tensor([selection_operator_names.index(GENERATE_OPERATOR)],device=self.device); selected_names=[GENERATE_OPERATOR]; penalty=True
+                    elif i==0 and not any("generate" in n.lower() for n in selected_names):
+                        selected=torch.tensor([selection_operator_names.index(GENERATE_OPERATOR)],device=self.device); selected_names=[GENERATE_OPERATOR]
+                    elif i==0 and "generate" not in selected_names[0].lower():
+                        generate_position=next(
+                            position for position, name in enumerate(selected_names)
+                            if "generate" in name.lower()
+                        )
+                        order=[generate_position, *range(generate_position), *range(generate_position+1, len(selected_names))]
+                        selected=selected[torch.tensor(order, dtype=torch.long, device=selected.device)]
+                        selected_names=[selected_names[position] for position in order]
+                    value=lp.squeeze(0)[selected].sum()
+                    if penalty: value=value + torch.as_tensor(FIRST_LAYER_EARLY_STOP_LOG_PROB_ADJUSTMENT,device=value.device,dtype=value.dtype)
+                    logs.append(value); names.append(selected_names); prev=ops[selected]
+                    if penalty or any(n.lower()==EARLY_STOP_OPERATOR.lower() for n in selected_names): break
+                return logs, names
+        return _Controller()
 
-            selected_indices = sample_operators(probs_1d, threshold=0.3)
-            selected_indices_list = selected_indices.cpu().tolist()
-            selected_names = [selection_operator_names[idx] for idx in selected_indices_list]
-            penalty_applied = False
-
-            if layer_idx == 0:
-                if any(name.lower() == "earlystop" for name in selected_names):
-                    penalty_applied = True
-                    try:
-                        generate_idx = selection_operator_names.index("Generate")
-                    except ValueError:
-                        generate_idx = 0
-                    selected_indices = torch.tensor([generate_idx], device=self.device)
-                    selected_names = ["Generate"]
-                elif not any("generate" in name.lower() for name in selected_names):
-                    try:
-                        generate_idx = selection_operator_names.index("Generate")
-                    except ValueError:
-                        generate_idx = 0
-                    selected_indices = torch.tensor([generate_idx], device=self.device)
-                    selected_names = ["Generate"]
-                elif "generate" not in selected_names[0].lower() and any(
-                    "generate" in name.lower() for name in selected_names
-                ):
-                    for idx, name in enumerate(selected_names):
-                        if "generate" in name.lower():
-                            selected_names = [selected_names[idx]] + selected_names[:idx] + selected_names[idx + 1 :]
-                            try:
-                                new_first_idx = selection_operator_names.index(selected_names[0])
-                            except ValueError:
-                                new_first_idx = 0
-                            new_indices = [new_first_idx] + [
-                                selection_operator_names.index(n) for n in selected_names[1:]
-                            ]
-                            selected_indices = torch.tensor(new_indices, device=self.device)
-                            break
-
-            if selected_indices.numel() > 0:
-                layer_log_prob = torch.sum(log_probs_1d[selected_indices])
-            else:
-                layer_log_prob = torch.tensor(0.0, device=self.device)
-
-            if layer_idx == 0 and penalty_applied:
-                layer_log_prob = layer_log_prob + torch.tensor(-1.5, device=self.device)
-
-            log_probs_layers.append(layer_log_prob)
-            selected_names_layers.append(selected_names)
-
-            if selected_indices.numel() > 0:
-                selected_indices = selected_indices.to(operators_embedding.device)
-                prev_operators = operators_embedding[selected_indices]
-            else:
-                prev_operators = None
-
-            if (layer_idx == 0 and penalty_applied) or any(name.lower() == "earlystop" for name in selected_names):
-                break
-
-        return log_probs_layers, selected_names_layers
+__all__ = ["OperatorSelector", "MultiLayerController", "sample_operators"]
