@@ -216,6 +216,24 @@ Test = {
 
         async def _execute_test(self, solution: str, entry_point: str) -> dict:
             \"\"\"Safe execution wrapper with detailed error capture\"\"\"
+            from maas.ext.maas.scripts.safe_code_execution import (
+                ProcessExecutionError,
+                ProcessExecutionTimeout,
+                run_in_disposable_process,
+            )
+            try:
+                return await run_in_disposable_process(
+                    self._execute_test_in_worker,
+                    solution,
+                    entry_point,
+                    timeout=15,
+                )
+            except ProcessExecutionTimeout:
+                return {"system_error": "Code execution timed out"}
+            except ProcessExecutionError as e:
+                return {"system_error": str(e)}
+
+        def _execute_test_in_worker(self, solution: str, entry_point: str) -> dict:
             try:
                 test_cases = extract_test_cases_from_jsonl(entry_point)
                 env = {"__TEST_MODE__": True}

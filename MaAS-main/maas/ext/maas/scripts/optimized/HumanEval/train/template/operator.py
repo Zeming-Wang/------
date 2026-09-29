@@ -11,6 +11,11 @@ from maas.ext.maas.scripts.utils import extract_test_cases_from_jsonl, test_case
 from maas.actions.action_node import ActionNode
 from maas.llm import LLM
 from maas.logs import logger
+from maas.ext.maas.scripts.safe_code_execution import (
+    ProcessExecutionError,
+    ProcessExecutionTimeout,
+    run_in_disposable_process_sync,
+)
 import re
 
 
@@ -100,6 +105,19 @@ class Test(Operator):
         super().__init__(llm, name)
 
     def exec_code(self, solution, entry_point):
+        try:
+            return run_in_disposable_process_sync(
+                self._exec_code_in_worker,
+                solution,
+                entry_point,
+                timeout=15,
+            )
+        except ProcessExecutionTimeout:
+            return {"exec_fail_case": "Code execution timed out"}
+        except ProcessExecutionError as error:
+            return {"exec_fail_case": str(error)}
+
+    def _exec_code_in_worker(self, solution, entry_point):
 
         test_cases = extract_test_cases_from_jsonl(entry_point, dataset="HumanEval")
                 

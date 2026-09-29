@@ -169,6 +169,10 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
         response, usage = _invoke_model(payload, prompt_loader.load("GenerateCoT", settings.dataset))
         return {"solution": response.get("content", ""), "metadata": {"usage": usage}}
 
+    def multi_generate_cot_adapter(payload):
+        response, usage = _invoke_model(payload, prompt_loader.load("MultiGenerateCoT", settings.dataset))
+        return {"solution": response.get("content", ""), "metadata": {"usage": usage}}
+
     def self_refine_adapter(payload):
         problem = _problem_from_payload(payload)
         solution = payload.get("current_solution", "")
@@ -180,7 +184,7 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
         problem = _problem_from_payload(payload)
         code_output = payload.get("current_solution", "")
         content = f"Problem:\n{problem}\n\nCode output:\n{code_output}"
-        instruction = "Use the executed code output to produce the final mathematical solution and answer."
+        instruction = prompt_loader.load("BootstrapGenerate", settings.dataset)
         response, usage = _invoke_model(payload, instruction, user_content=content)
         return {"solution": response.get("content", ""), "metadata": {"usage": usage}}
 
@@ -242,7 +246,7 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
         elif name == "ScEnsemble":
             config["operator"] = sc_ensemble_adapter
         elif name == "MultiGenerateCoT":
-            config["operator"] = generate_cot_adapter
+            config["operator"] = multi_generate_cot_adapter
         else:
             config["operator"] = adapter
             config["instructions"] = prompt_loader.load(name, settings.dataset)

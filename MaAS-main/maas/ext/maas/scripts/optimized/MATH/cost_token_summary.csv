@@ -1,2 +1,5 @@
 timestamp,mode,dataset,sample_count,problem_count,average_score,prompt_tokens,completion_tokens,total_tokens,total_cost,status
 2026/9/22 19:13,test,MATH,3,6,1,46445,45671,92116,0.03436935,success
+2026-09-26 04:48:02,train,MATH,3,3,0.66667,59439,64457,123896,0.04759005,success
+2026-09-27 13:20:24,train,MATH,1,119,0.80583,474519,388474,862993,0.38112930,success
+2026-09-28 05:47:47,train,MATH,1,119,0.31915,256509,286068,542577,0.69955575,success

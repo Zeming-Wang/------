@@ -1,5 +1,4 @@
 import asyncio
-import threading
 import time
 import torch
 from typing import Any, Callable, Dict, List, Optional, Tuple, Literal
@@ -8,6 +7,11 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fi
 
 from maas.ext.maas.benchmark.benchmark import BaseBenchmark
 from maas.logs import logger
+from maas.ext.maas.scripts.safe_code_execution import (
+    ProcessExecutionError,
+    ProcessExecutionTimeout,
+    run_in_disposable_process_sync,
+)
 from maas.utils.sanitize import sanitize
 
 class HumanEvalBenchmark(BaseBenchmark):
@@ -21,35 +25,24 @@ class HumanEvalBenchmark(BaseBenchmark):
                 optimizer: torch.optim.Optimizer,):
         super().__init__(name, file_path, log_path, batch_size, controller, operator_embeddings, optimizer)
 
-    class TimeoutError(Exception):
-        pass
-
-    def run_with_timeout(self, func, args, timeout):
-        result = []
-        stop_event = threading.Event()
-
-        def target():
-            try:
-                result.append(func(*args))
-            except Exception as e:
-                result.append(e)
-            finally:
-                stop_event.set()
-
-        thread = threading.Thread(target=target)
-        thread.start()
-        is_timeout = not stop_event.wait(timeout)
-
-        if is_timeout:
-            raise self.TimeoutError("Function execution timed out")
-
-        if not result:
-            return None
-        if isinstance(result[0], Exception):
-            raise result[0]
-        return result[0]
-
     def check_solution(self, solution, test, entry_point):
+        try:
+            return run_in_disposable_process_sync(
+                self._check_solution_in_worker,
+                solution,
+                test,
+                entry_point,
+                timeout=15,
+            )
+        except ProcessExecutionTimeout:
+            return (
+                self.FAIL,
+                "Execution timed out. Please check if your solution contains infinite loops or overly time-consuming operations.",
+            )
+        except ProcessExecutionError as error:
+            return self.FAIL, f"Execution worker failed: {error}"
+
+    def _check_solution_in_worker(self, solution, test, entry_point):
         solution = sanitize(code=solution, entrypoint=entry_point)
         try:
             global_dict = {
@@ -90,16 +83,11 @@ class HumanEvalBenchmark(BaseBenchmark):
 
             check = global_dict["check"]
 
-            result = self.run_with_timeout(check, (global_dict[entry_point],), 15)
+            result = check(global_dict[entry_point])
 
             if result is None:
                 result = (self.PASS, "The solution passed all test cases.")
 
-        except self.TimeoutError:
-            result = (
-                self.FAIL,
-                "Execution timed out. Please check if your solution contains infinite loops or overly time-consuming operations.",
-            )
         except Exception as e:
             error_message = f"Error: {str(e)}.\n Solution: {solution}.\n Test: {test}"
             result = (self.FAIL, error_message)
@@ -154,4 +142,3 @@ class HumanEvalBenchmark(BaseBenchmark):
 
     def get_result_columns(self) -> List[str]:
         return ["inputs", "prediction", "expected_output", "score", "cost", "logprob"]
-

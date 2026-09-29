@@ -15,6 +15,8 @@
             5. Merged the `Config` class of send18:dev branch to take over the set/get operations of the Environment
             class.
 """
+import os
+import signal
 import subprocess
 from pathlib import Path
 from typing import Tuple
@@ -24,7 +26,16 @@ from pydantic import Field
 from maas.actions.action import Action
 from maas.logs import logger
 from maas.schema import RunCodeContext, RunCodeResult
+from maas.ext.maas.scripts.safe_code_execution import (
+    ProcessExecutionError,
+    ProcessExecutionTimeout,
+    run_in_disposable_process,
+)
 from maas.utils.exceptions import handle_exception
+
+
+TEXT_CODE_TIMEOUT_SECONDS = 10
+SCRIPT_TIMEOUT_SECONDS = 10
 
 PROMPT_TEMPLATE = """
 Role: You are a senior development and qa engineer, your role is summarize the code running result.
@@ -75,6 +86,41 @@ standard errors:
 """
 
 
+def _execute_text_code(code):
+    try:
+        namespace = {}
+        exec(code, namespace)
+    except Exception as error:
+        return "", str(error)
+    return namespace.get("result", ""), ""
+
+
+def _stop_subprocess_group(process):
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+    else:
+        process.terminate()
+
+    try:
+        process.wait(timeout=1.0)
+    except subprocess.TimeoutExpired:
+        pass
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, 0)
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+    elif process.poll() is None:
+        process.kill()
+    if process.poll() is None:
+        process.wait(timeout=1.0)
+
+
 class RunCode(Action):
     name: str = "RunCode"
     i_context: RunCodeContext = Field(default_factory=RunCodeContext)
@@ -82,12 +128,15 @@ class RunCode(Action):
     @classmethod
     async def run_text(cls, code) -> Tuple[str, str]:
         try:
-            # We will document_store the result in this dictionary
-            namespace = {}
-            exec(code, namespace)
-        except Exception as e:
-            return "", str(e)
-        return namespace.get("result", ""), ""
+            return await run_in_disposable_process(
+                _execute_text_code,
+                code,
+                timeout=TEXT_CODE_TIMEOUT_SECONDS,
+            )
+        except ProcessExecutionTimeout:
+            return "", "Code execution timed out"
+        except ProcessExecutionError as error:
+            return "", str(error)
 
     async def run_script(self, working_directory, additional_python_paths=[], command=[]) -> Tuple[str, str]:
         working_directory = str(working_directory)
@@ -104,16 +153,21 @@ class RunCode(Action):
 
         # Start the subprocess
         process = subprocess.Popen(
-            command, cwd=working_directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
+            command,
+            cwd=working_directory,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            start_new_session=(os.name == "posix"),
         )
         logger.info(" ".join(command))
 
         try:
             # Wait for the process to complete, with a timeout
-            stdout, stderr = process.communicate(timeout=10)
+            stdout, stderr = process.communicate(timeout=SCRIPT_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             logger.info("The command did not complete within the given timeout.")
-            process.kill()  # Kill the process if it times out
+            _stop_subprocess_group(process)
             stdout, stderr = process.communicate()
         return stdout.decode("utf-8"), stderr.decode("utf-8")
 

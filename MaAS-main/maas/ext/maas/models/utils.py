@@ -1,15 +1,23 @@
 from sentence_transformers import SentenceTransformer
 import torch
-    
+
+EMBEDDING_MODEL_PATH = (
+    "/home/wzm/.cache/huggingface/hub/"
+    "models--sentence-transformers--all-MiniLM-L6-v2/"
+    "snapshots/1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+)
+
+
 def get_sentence_embedding(sentence):
-    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    model = SentenceTransformer(EMBEDDING_MODEL_PATH)
     embeddings = model.encode(sentence)
     return torch.tensor(embeddings)
+
 
 class SentenceEncoder(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        self.model = SentenceTransformer(EMBEDDING_MODEL_PATH)
         for param in self.model.parameters():
             param.requires_grad = False
 

@@ -1,4 +1,3 @@
-import concurrent
 import sys
 import traceback
 from typing import List
@@ -10,6 +9,11 @@ from maas.ext.maas.scripts.optimized.GSM8K.train.template.op_prompt import *
 from maas.actions.action_node import ActionNode
 from maas.llm import LLM
 from maas.logs import logger
+from maas.ext.maas.scripts.safe_code_execution import (
+    ProcessExecutionError,
+    ProcessExecutionTimeout,
+    run_in_disposable_process,
+)
 import asyncio
 
 
@@ -109,18 +113,13 @@ class Programmer(Operator):
     def __init__(self, llm: LLM, name: str = "Programmer"):
         super().__init__(llm, name)
 
-    async def exec_code(self, code, timeout=100):
-        loop = asyncio.get_running_loop()
-        with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
-            try:
-                future = loop.run_in_executor(executor, run_code, code)
-                result = await asyncio.wait_for(future, timeout=timeout)
-                return result
-            except asyncio.TimeoutError:
-                executor.shutdown(wait=False, cancel_futures=True)
-                return "Error", "Code execution timed out"
-            except Exception as e:
-                return "Error", f"Unknown error: {str(e)}"
+    async def exec_code(self, code, timeout=60):
+        try:
+            return await run_in_disposable_process(run_code, code, timeout=timeout)
+        except ProcessExecutionTimeout:
+            return "Error", "Code execution timed out"
+        except ProcessExecutionError as e:
+            return "Error", f"Unknown error: {str(e)}"
 
     async def code_generate(self, problem, analysis, feedback, mode):
         prompt = PYTHON_CODE_VERIFIER_PROMPT.format(

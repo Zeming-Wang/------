@@ -180,17 +180,20 @@ Programmer = {
 
         async def _safe_execute(self, code: str, timeout: int = 30) -> tuple:
             \"\"\"Execute code in isolated environment with resource limits\"\"\"
+            from maas.ext.maas.scripts.safe_code_execution import (
+                ProcessExecutionError,
+                ProcessExecutionTimeout,
+                run_in_disposable_process,
+            )
             try:
-                loop = asyncio.get_running_loop()
-                with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
-                    future = loop.run_in_executor(
-                        executor, 
-                        self._run_in_sandbox,  # Assume sandbox execution method
-                        code,
-                        timeout
-                    )
-                    return await asyncio.wait_for(future, timeout=timeout+5)
-            except Exception as e:
+                return await run_in_disposable_process(
+                    self._run_in_sandbox,
+                    code,
+                    timeout=timeout,
+                )
+            except ProcessExecutionTimeout:
+                return ("Runtime Error", "Code execution timed out")
+            except ProcessExecutionError as e:
                 return ("Runtime Error", str(e))
 
         async def code_generate(self, problem: str, context: str, feedback: str) -> dict:

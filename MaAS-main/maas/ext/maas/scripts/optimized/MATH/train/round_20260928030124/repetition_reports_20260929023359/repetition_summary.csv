@@ -1,0 +1,5 @@
+﻿repetition,problem_count,correct_count,wrong_count,accuracy,cumulative_attempts,cumulative_correct,cumulative_wrong,cumulative_accuracy
+1,119,62,57,0.52100840,119,62,57,0.52100840
+2,119,67,52,0.56302521,238,129,109,0.54201681
+3,119,60,59,0.50420168,357,189,168,0.52941176
+TOTAL,357,189,168,0.52941176,357,189,168,0.52941176
