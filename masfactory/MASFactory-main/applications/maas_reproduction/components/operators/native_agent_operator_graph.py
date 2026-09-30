@@ -50,7 +50,8 @@ class NativeAgentOperatorGraph(Graph):
 
     def __init__(self, name: str = "NativeAgentOperatorGraph", *, operator_name: str = "Generate",
                  operator: Any = None, agent: Any = None, instructions: str = "",
-                 retry_limit: int = 0, validator: Callable[[OperatorResult], None] | None = None) -> None:
+                 retry_limit: int = 0, validator: Callable[[OperatorResult], None] | None = None,
+                 raise_on_error: bool = False) -> None:
         # This operator graph is embedded below the protected architecture
         # subtree.  It must never inherit caller attributes implicitly.
         super().__init__(name, pull_keys={}, push_keys={})
@@ -58,6 +59,7 @@ class NativeAgentOperatorGraph(Graph):
             raise ValueError("retry_limit must be a non-negative integer")
         self.operator_name, self.adapter = operator_name, operator if operator is not None else agent
         self.instructions, self.retry_limit, self.validator = instructions, retry_limit, validator
+        self.raise_on_error = bool(raise_on_error)
 
     def build(self) -> None:
         if self._is_built:
@@ -96,6 +98,8 @@ class NativeAgentOperatorGraph(Graph):
                 return {"operator_result": result}
             except Exception as exc:  # recover adapter/validation failures at the seam
                 error = exc
+        if self.raise_on_error and error is not None:
+            raise error
         return {"operator_result": OperatorResult(self.operator_name, "failed",
                                                     execution_output=str(error),
                                                     metadata={"error_type": type(error).__name__})}

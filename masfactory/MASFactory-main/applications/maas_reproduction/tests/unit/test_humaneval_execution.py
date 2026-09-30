@@ -52,7 +52,7 @@ def test_humaneval_timeout_is_bounded_and_does_not_escape() -> None:
     assert result == ScoreResult(0.0, True)
 
 
-def test_humaneval_rejects_process_and_file_imports() -> None:
+def test_humaneval_preserves_source_standard_import_permissions() -> None:
     scorer = HumanEvalBenchmark()
     result = scorer.evaluate(
         "import os\ndef add(a, b):\n    return os.getcwd()",
@@ -60,4 +60,15 @@ def test_humaneval_rejects_process_and_file_imports() -> None:
         context=context(test="def check(fn):\n    fn(1, 2)"),
     )
 
-    assert result == ScoreResult(0.0, True)
+    assert result == ScoreResult(1.0, True)
+
+
+def test_humaneval_accepts_decimal_import_like_source() -> None:
+    scorer = HumanEvalBenchmark()
+    result = scorer.evaluate(
+        "from decimal import Decimal\ndef add(a, b):\n    return int(Decimal(a) + Decimal(b))",
+        None,
+        context=context(test="def check(fn):\n    assert fn(1, 2) == 3"),
+    )
+
+    assert result == ScoreResult(1.0, True)

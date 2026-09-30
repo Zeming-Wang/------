@@ -62,7 +62,8 @@ def test_sc_ensemble_empty_candidates_is_structured_failure():
 def test_programmer_retries_inside_operator_and_returns_timeout_result():
     attempts = []
     graph = ProgrammerGraph(
-        code_generator=lambda payload: attempts.append(payload["attempt"]) or {"code": "solve()"},
+        code_generator=lambda payload: attempts.append(payload["attempt"])
+        or {"code": "def solve():\n    return 42\n\nprint(solve())\n"},
         executor=lambda _: {"success": False, "error": "timeout"},
         max_attempts=3,
     )

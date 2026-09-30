@@ -8,9 +8,11 @@ from .native_agent_operator_graph import _call, normalize_result
 
 
 class MultiGenerateCoTGraph(Graph):
-    def __init__(self, name: str = "MultiGenerateCoT", *, operator: Any = None, agent: Any = None) -> None:
+    def __init__(self, name: str = "MultiGenerateCoT", *, operator: Any = None, agent: Any = None,
+                 raise_on_error: bool = False) -> None:
         super().__init__(name, pull_keys={}, push_keys={})
         self.adapter = operator if operator is not None else agent
+        self.raise_on_error = bool(raise_on_error)
 
     def build(self) -> None:
         if self._is_built: return
@@ -37,6 +39,8 @@ class MultiGenerateCoTGraph(Graph):
                                                         solution=responses[0] if responses else None,
                                                         candidates=tuple(responses))}
         except Exception as exc:
+            if self.raise_on_error:
+                raise
             return {"operator_result": OperatorResult("MultiGenerateCoT", "failed",
                                                         candidates=tuple(responses),
                                                         execution_output=str(exc),

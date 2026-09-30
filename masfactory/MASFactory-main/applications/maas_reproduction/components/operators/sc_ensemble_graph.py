@@ -9,8 +9,10 @@ from .native_agent_operator_graph import _call
 
 
 class ScEnsembleGraph(Graph):
-    def __init__(self, name: str = "ScEnsemble", *, operator: Any = None, agent: Any = None) -> None:
+    def __init__(self, name: str = "ScEnsemble", *, operator: Any = None, agent: Any = None,
+                 raise_on_error: bool = False) -> None:
         super().__init__(name, pull_keys={}, push_keys={}); self.adapter = operator if operator is not None else agent
+        self.raise_on_error = bool(raise_on_error)
 
     def build(self) -> None:
         if self._is_built: return
@@ -38,6 +40,8 @@ class ScEnsembleGraph(Graph):
                 raise ValueError("invalid solution_letter")
             return {"operator_result": OperatorResult("ScEnsemble", "success", solution=candidates[index], candidates=candidates)}
         except Exception as exc:
+            if self.raise_on_error:
+                raise
             return {"operator_result": OperatorResult(
                 "ScEnsemble", "failed", candidates=candidates,
                 execution_output=str(exc),

@@ -12,17 +12,25 @@ from ..benchmarks import GSM8KScorer, MATHScorer, HumanEvalScorer
 from ..adapters.cost_tracker import CostTracker
 from ..adapters.artifact_store import ArtifactStore
 from ..adapters.code_executor import CodeExecutor
+from ..source_compat import (
+    HumanEvalPublicTestRepository,
+    SourceHumanEvalExecutor,
+    parse_solution_letter_xml,
+    sanitize as source_sanitize,
+)
 from .checkpoint_manager import CheckpointManager
 from ..training.batch_accumulator import BatchAccumulator
 from .. import contracts
 from applications.maas_reproduction.components.operators.registry import OPERATOR_REGISTRY
 from applications.maas_reproduction.components.operators.programmer_graph.programmer_core import ProgrammerCore
+from applications.maas_reproduction.components.operators.humaneval_test_graph import HumanEvalTestProtocol
 from applications.maas_reproduction.workflow import build_train_root_graph, build_test_root_graph
 from .dependencies import RuntimeDependencies
 from .prompt_loader import PromptLoader
 from .run_logger import RunLogger
 from .source_controller_bundle import (
     load_source_controller_bundle,
+    validate_controller_distribution_fixtures,
     validate_query_embedding_fixtures,
 )
 
@@ -104,6 +112,7 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
             controller.load_state_dict(source_bundle.controller_state_dict, strict=True)
             controller.requires_grad_(False)
             controller.eval()
+            validate_controller_distribution_fixtures(source_bundle, controller)
         else:
             catalog = expected_catalog
             embeddings = embedder.encode_many(catalog).to(device)
@@ -131,15 +140,24 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
             return str(invocation.get("problem", ""))
         return str(getattr(invocation, "problem", ""))
 
+    def _entrypoint_from_payload(payload: dict[str, Any]) -> str:
+        entrypoint = payload.get("entry_point")
+        if entrypoint:
+            return str(entrypoint)
+        invocation = payload.get("operator_invocation")
+        if isinstance(invocation, dict):
+            return str(invocation.get("entry_point", ""))
+        return str(getattr(invocation, "entry_point", ""))
+
     def _invoke_model(payload: dict[str, Any], instruction: str, *, user_content: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
         problem = _problem_from_payload(payload)
         feedback = payload.get("feedback", "")
         if user_content is None:
             user_content = problem if not feedback else f"Problem:\n{problem}\n\nFeedback:\n{feedback}"
-        messages = [
-            {"role": "system", "content": instruction},
-            {"role": "user", "content": user_content},
-        ]
+        messages = []
+        if instruction:
+            messages.append({"role": "system", "content": instruction})
+        messages.append({"role": "user", "content": user_content})
         tracker = getattr(model, "token_tracker", None)
         before_input = int(getattr(tracker, "total_input_usage", 0) or 0)
         before_output = int(getattr(tracker, "total_output_usage", 0) or 0)
@@ -165,6 +183,18 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
         response, usage = _invoke_model(payload, str(payload.get("instructions", "")))
         return {"solution": response.get("content", ""), "metadata": {"usage": usage}}
 
+    def _humaneval_code_fill(payload: dict[str, Any], prompt: str, entrypoint: str | None) -> dict[str, Any]:
+        response, usage = _invoke_model(payload, "", user_content=prompt)
+        solution = source_sanitize(str(response.get("content", "")), entrypoint=entrypoint)
+        return {"solution": solution, "metadata": {"usage": usage}}
+
+    def humaneval_generate_adapter(payload):
+        return _humaneval_code_fill(
+            payload,
+            _problem_from_payload(payload),
+            _entrypoint_from_payload(payload),
+        )
+
     def generate_cot_adapter(payload):
         response, usage = _invoke_model(payload, prompt_loader.load("GenerateCoT", settings.dataset))
         return {"solution": response.get("content", ""), "metadata": {"usage": usage}}
@@ -179,6 +209,13 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
         content = f"Problem:\n{problem}\n\nCurrent solution:\n{solution}"
         response, usage = _invoke_model(payload, prompt_loader.load("SelfRefine", settings.dataset), user_content=content)
         return {"solution": response.get("content", ""), "metadata": {"usage": usage}}
+
+    def humaneval_self_refine_adapter(payload):
+        problem = _problem_from_payload(payload)
+        solution = payload.get("current_solution", "")
+        template = prompt_loader.load("SelfRefine", "HumanEval")
+        prompt = template.format(problem=problem, solution=solution)
+        return _humaneval_code_fill(payload, prompt, None)
 
     def bootstrap_generate_adapter(payload):
         problem = _problem_from_payload(payload)
@@ -198,16 +235,59 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
         letter = next((char for char in text if "A" <= char <= "Z"), "")
         return {"solution_letter": letter, "metadata": {"usage": usage}}
 
+    def humaneval_sc_ensemble_adapter(payload):
+        problem = _problem_from_payload(payload)
+        candidates = tuple(payload.get("candidates", ()))
+        labeled = "\n\n\n".join(
+            f"{chr(65 + index)}: \n{candidate}" for index, candidate in enumerate(candidates)
+        )
+        prompt = prompt_loader.load("ScEnsemble", "HumanEval").format(
+            problem=problem,
+            solutions=labeled,
+        )
+        response, usage = _invoke_model(payload, "", user_content=prompt)
+        letter = parse_solution_letter_xml(str(response.get("content", "")), len(candidates))
+        return {"solution_letter": letter, "metadata": {"usage": usage}}
+
+    def humaneval_reflection_adapter(payload):
+        template = prompt_loader.load("TestReflection", "HumanEval")
+        prompt = template.format(
+            problem=payload.get("problem", ""),
+            solution=payload.get("solution", ""),
+            exec_pass=payload.get("exec_pass", ""),
+            test_fail=payload.get("test_fail", ""),
+        )
+        filled = _humaneval_code_fill(payload, prompt, None)
+        return {
+            "reflection_and_solution": filled["solution"],
+            "metadata": filled["metadata"],
+        }
+
+    def humaneval_fallback_adapter(payload):
+        prompt = prompt_loader.load("ImproveCode", "HumanEval") + _problem_from_payload(payload)
+        return _humaneval_code_fill(payload, prompt, _entrypoint_from_payload(payload))
+
     def programmer_code_adapter(payload):
+        feedback = str(payload.get("feedback", "") or "").strip()
+        attempt = payload.get("attempt", 1)
+        if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1:
+            attempt = 1
         strict_programmer_instruction = (
             f"{programmer_instruction}\n\n"
-            "You must output ONLY complete executable Python source code.\n"
-            "The output must define a callable zero-argument function named solve.\n"
-            "The output must call solve() and print its returned answer.\n"
-            "Do not output Markdown fences, prose, explanations, labels, or analysis.\n"
-            "Do not return a numeric answer or mathematical solution text directly; return Python code only."
+            "Follow the required Python output contract exactly.\n"
+            "Return only executable Python. Define def solve(): and call print(solve())."
         )
-        response, usage = _invoke_model(payload, strict_programmer_instruction)
+        if feedback:
+            strict_programmer_instruction += (
+                f"\n\nAttempt {attempt} of 3.\n"
+                f"Previous response was rejected:\n{feedback}\n"
+                "Return a complete corrected Python program. Do not repeat the rejected response."
+            )
+        response, usage = _invoke_model(
+            payload,
+            strict_programmer_instruction,
+            user_content=_problem_from_payload(payload),
+        )
         return {"code": response.get("content", ""), "metadata": {"usage": usage}}
 
     executor = CodeExecutor()
@@ -224,17 +304,49 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
     def bootstrap_programmer_adapter(payload):
         core = ProgrammerCore(generator=programmer_code_adapter, executor=programmer_executor, max_attempts=3)
         result = core.run(payload)
+        metadata = {
+            "attempts": result.get("attempts"),
+            "attempt_diagnostics": result.get("attempt_diagnostics", []),
+        }
         if result.get("error"):
             return {"operator_name": "Programmer", "status": "failed", "code": result.get("code"),
-                    "execution_output": result.get("output"), "metadata": {"attempts": result.get("attempts")}}
+                    "execution_output": result.get("output"), "metadata": metadata}
         return {"operator_name": "Programmer", "status": "success", "solution": result.get("output"),
                 "code": result.get("code"), "execution_output": result.get("output"),
-                "metadata": {"attempts": result.get("attempts")}}
+                "metadata": metadata}
+    humaneval_test_protocol = None
+    if settings.dataset == "HumanEval":
+        public_tests = HumanEvalPublicTestRepository(
+            Path(__file__).parents[2] / "assets" / "data" / "humaneval_public_test.jsonl"
+        )
+        humaneval_test_protocol = HumanEvalTestProtocol(
+            repository=public_tests,
+            executor=SourceHumanEvalExecutor(timeout_seconds=15.0),
+            reflection_adapter=humaneval_reflection_adapter,
+            max_repairs=3,
+        )
+
     for name, spec in registry.items():
         config = spec.setdefault("config", {})
         # Reuse existing Operator interfaces: ProgrammerGraph names its
         # injected generator ``programmer``; agent graphs use ``operator``.
-        if name == "Programmer":
+        if settings.dataset == "HumanEval" and name in {"Generate", "GenerateCoT"}:
+            config["operator"] = humaneval_generate_adapter
+            config["instructions"] = ""
+            config["raise_on_error"] = True
+        elif settings.dataset == "HumanEval" and name == "MultiGenerateCoT":
+            config["operator"] = humaneval_generate_adapter
+            config["raise_on_error"] = True
+        elif settings.dataset == "HumanEval" and name == "SelfRefine":
+            config["operator"] = humaneval_self_refine_adapter
+            config["instructions"] = ""
+            config["raise_on_error"] = True
+        elif settings.dataset == "HumanEval" and name == "ScEnsemble":
+            config["operator"] = humaneval_sc_ensemble_adapter
+            config["raise_on_error"] = True
+        elif settings.dataset == "HumanEval" and name == "Test":
+            config["protocol"] = humaneval_test_protocol
+        elif name == "Programmer":
             config["code_generator"] = programmer_code_adapter
             config["executor"] = programmer_executor
         elif name == "GenerateCoT":
@@ -260,7 +372,10 @@ def build_runtime(settings: RuntimeSettings, *, fake: bool = False, manager: Any
     tracker = CostTracker(usage_manager)
     kwargs = dict(policy_controller=controller, operator_embeddings=embeddings, operator_catalog=catalog,
                   operator_registry=registry, dataset=settings.dataset, generate=bootstrap_generate_adapter, programmer=bootstrap_programmer_adapter,
-                  scorer=scorer, cost_tracker=tracker, batch_accumulator=accumulator)
+                  scorer=scorer, cost_tracker=tracker, batch_accumulator=accumulator,
+                  humaneval_test_protocol=humaneval_test_protocol,
+                  humaneval_fallback=humaneval_fallback_adapter if settings.dataset == "HumanEval" else None,
+                  graph_max_attempts=3 if settings.dataset == "HumanEval" else 1)
     root = build_train_root_graph(**kwargs) if settings.mode == "train" else build_test_root_graph(**kwargs)
     from .dataset_runner import DatasetRunner
     data_root = Path(__file__).parents[2] / "assets" / "data"
