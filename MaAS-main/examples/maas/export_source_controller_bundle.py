@@ -28,6 +28,15 @@ OPERATOR_CATALOGS = {
         "SelfRefine",
         "EarlyStop",
     ),
+    "HumanEval": (
+        "Generate",
+        "GenerateCoT",
+        "MultiGenerateCoT",
+        "ScEnsemble",
+        "Test",
+        "SelfRefine",
+        "EarlyStop",
+    ),
 }
 
 
@@ -95,6 +104,71 @@ def _query_texts(path: Path | None) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _controller_parity_fixtures(
+    *, state_dict, operator_embeddings, catalog, query_texts, embedding_fn,
+    controller_factory=None,
+):
+    """Capture real source Controller layer distributions with forward hooks."""
+    import torch
+
+    if not query_texts:
+        return ()
+    if controller_factory is None:
+        from maas.ext.maas.models.controller import MultiLayerController
+        controller_factory = lambda: MultiLayerController(device=torch.device("cpu"))
+    controller = controller_factory()
+    controller.load_state_dict(state_dict, strict=True)
+    controller.eval()
+    fixtures = []
+    original_rng = torch.random.get_rng_state()
+    try:
+        for fixture_index, text in enumerate(query_texts):
+            captured = []
+            hooks = []
+            for layer_index, layer in enumerate(controller.layers):
+                hooks.append(layer.register_forward_hook(
+                    lambda _module, inputs, output, index=layer_index: captured.append(
+                        (index, inputs, output)
+                    )
+                ))
+            seed = 1729 + fixture_index
+            torch.manual_seed(seed)
+            try:
+                layer_log_probs, selected_layers = controller.forward(
+                    text, operator_embeddings, catalog
+                )
+            finally:
+                for hook in hooks:
+                    hook.remove()
+            layer_rows = []
+            previous_indices: list[int] = []
+            for layer_index, inputs, output in sorted(captured, key=lambda item: item[0]):
+                log_probs, probs = output
+                selected_names = tuple(selected_layers[layer_index])
+                selected_indices = tuple(catalog.index(name) for name in selected_names)
+                layer_rows.append({
+                    "layer_index": layer_index,
+                    "previous_operator_indices": tuple(previous_indices),
+                    "selected_indices": selected_indices,
+                    "log_probs": log_probs.detach().cpu().float().squeeze(0).contiguous(),
+                    "probs": probs.detach().cpu().float().squeeze(0).contiguous(),
+                })
+                previous_indices = list(selected_indices)
+            aggregate = layer_log_probs[0]
+            for value in layer_log_probs[1:]:
+                aggregate = aggregate + value
+            fixtures.append({
+                "text": text,
+                "seed": seed,
+                "query_embedding": torch.as_tensor(embedding_fn(text)).detach().cpu().float().contiguous(),
+                "layers": tuple(layer_rows),
+                "aggregate_log_prob": aggregate.detach().cpu().float().reshape(()),
+            })
+    finally:
+        torch.random.set_rng_state(original_rng)
+    return tuple(fixtures)
+
+
 def export_source_controller_bundle(
     *,
     dataset: str,
@@ -103,12 +177,13 @@ def export_source_controller_bundle(
     output_path: str | Path,
     query_fixture_path: str | Path | None = None,
     embedding_fn: Callable[[str], object] | None = None,
+    controller_factory: Callable[[], object] | None = None,
 ) -> Path:
     """Create the complete, test-only artifact consumed by the reproduction."""
     import torch
 
     if dataset not in OPERATOR_CATALOGS:
-        raise ValueError("source bundle export currently supports only GSM8K and MATH")
+        raise ValueError("unsupported source bundle dataset")
     controller_path = Path(controller_path).resolve()
     operator_json_path = Path(operator_json_path).resolve()
     output_path = Path(output_path).resolve()
@@ -137,19 +212,22 @@ def export_source_controller_bundle(
     if not bool(torch.isfinite(operator_embeddings).all()):
         raise ValueError("source operator embeddings must be finite")
 
+    query_texts = _query_texts(query_fixture_path)
+    if dataset == "HumanEval" and not query_texts:
+        raise ValueError("HumanEval source bundles require 5-20 query fixtures")
     fixtures = tuple(
         {
             "text": text,
             "embedding": torch.as_tensor(embedding_fn(text)).detach().cpu().to(dtype=torch.float32).contiguous(),
         }
-        for text in _query_texts(query_fixture_path)
+        for text in query_texts
     )
     if any(tuple(item["embedding"].shape) != (384,) for item in fixtures):
         raise ValueError("source query embedding fixtures must be 384-dimensional")
 
     payload = {
         "artifact_type": "maas_source_controller_bundle",
-        "format_version": 1,
+        "format_version": 2 if dataset == "HumanEval" else 1,
         "dataset": dataset,
         "controller_state_dict": {
             key: value.detach().cpu().clone() for key, value in state_dict.items()
@@ -165,6 +243,17 @@ def export_source_controller_bundle(
             "operator_json_sha256": _sha256(operator_json_path),
             "operator_descriptions": descriptions,
             "query_embedding_fixtures": fixtures,
+            "controller_parity_fixtures": _controller_parity_fixtures(
+                state_dict=state_dict,
+                operator_embeddings=operator_embeddings,
+                catalog=catalog,
+                query_texts=query_texts,
+                embedding_fn=embedding_fn,
+                controller_factory=controller_factory,
+            ),
+            "workflow_contract": (
+                "maas-humaneval-source-v1" if dataset == "HumanEval" else "maas-source-v1"
+            ),
         },
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)

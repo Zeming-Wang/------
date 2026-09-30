@@ -53,6 +53,58 @@ def validate_query_embedding_fixtures(
             ) from exc
 
 
+def validate_controller_distribution_fixtures(
+    bundle: SourceControllerBundle,
+    controller: Any,
+    *,
+    rtol: float = 1e-4,
+    atol: float = 1e-5,
+) -> None:
+    """Validate every source layer's full probability vectors deterministically."""
+    import torch
+
+    fixtures = bundle.metadata.get("controller_parity_fixtures", ())
+    if bundle.dataset == "HumanEval" and not fixtures:
+        raise SourceControllerBundleError("HumanEval bundle lacks Controller parity fixtures")
+    embeddings = bundle.operator_embeddings
+    for fixture_index, fixture in enumerate(fixtures):
+        if not isinstance(fixture, Mapping):
+            raise SourceControllerBundleError(f"Controller parity fixture {fixture_index} is malformed")
+        query = fixture.get("query_embedding")
+        layers = fixture.get("layers")
+        if not isinstance(query, torch.Tensor) or tuple(query.shape) != (384,):
+            raise SourceControllerBundleError(f"Controller parity fixture {fixture_index} is malformed")
+        if not isinstance(layers, (tuple, list)) or not layers:
+            raise SourceControllerBundleError(f"Controller parity fixture {fixture_index} is malformed")
+        query = query.to(next(controller.parameters()).device)
+        live_embeddings = embeddings.to(query.device)
+        for row in layers:
+            layer_index = row.get("layer_index")
+            previous = tuple(row.get("previous_operator_indices", ()))
+            if not isinstance(layer_index, int) or not 0 <= layer_index < len(controller.layers):
+                raise SourceControllerBundleError("Controller parity layer index is invalid")
+            previous_embeddings = live_embeddings[list(previous)] if previous else None
+            with torch.no_grad():
+                actual_log_probs, actual_probs = controller.layers[layer_index](
+                    query, live_embeddings, previous_embeddings
+                )
+            for name, actual in (("log_probs", actual_log_probs), ("probs", actual_probs)):
+                expected = row.get(name)
+                if not isinstance(expected, torch.Tensor) or tuple(expected.shape) != (len(bundle.operator_catalog),):
+                    raise SourceControllerBundleError(f"Controller parity {name} fixture is malformed")
+                try:
+                    torch.testing.assert_close(
+                        actual.detach().cpu().float().squeeze(0),
+                        expected.detach().cpu().float(),
+                        rtol=rtol,
+                        atol=atol,
+                    )
+                except AssertionError as exc:
+                    raise SourceControllerBundleError(
+                        f"Controller parity fixture {fixture_index} layer {layer_index} {name} mismatch"
+                    ) from exc
+
+
 def _torch_load(path: Path) -> Any:
     import torch
 
@@ -77,7 +129,8 @@ def load_source_controller_bundle(
         raise SourceControllerBundleError("source bundle must contain a mapping")
     if payload.get("artifact_type") != "maas_source_controller_bundle":
         raise SourceControllerBundleError("unsupported source bundle artifact type")
-    if payload.get("format_version") != 1:
+    version = payload.get("format_version")
+    if version not in {1, 2}:
         raise SourceControllerBundleError("unsupported source bundle format version")
 
     dataset = payload.get("dataset")
@@ -85,10 +138,12 @@ def load_source_controller_bundle(
         raise SourceControllerBundleError(
             f"source bundle dataset {dataset!r} does not match {expected_dataset!r}"
         )
-    if dataset not in {"GSM8K", "MATH"}:
+    if dataset not in {"GSM8K", "MATH", "HumanEval"}:
         raise SourceControllerBundleError(
-            "source Controller bundles currently support only GSM8K and MATH"
+            "unsupported source Controller bundle dataset"
         )
+    if dataset == "HumanEval" and version != 2:
+        raise SourceControllerBundleError("HumanEval source Controller bundles require format version 2")
     catalog = tuple(payload.get("operator_catalog", ()))
     if catalog != tuple(expected_catalog):
         raise SourceControllerBundleError("source bundle operator catalog does not match dataset contract")
@@ -128,6 +183,8 @@ def load_source_controller_bundle(
     metadata = payload.get("metadata", {})
     if not isinstance(metadata, Mapping):
         raise SourceControllerBundleError("source bundle metadata must be a mapping")
+    if dataset == "HumanEval" and metadata.get("workflow_contract") != "maas-humaneval-source-v1":
+        raise SourceControllerBundleError("HumanEval source bundle workflow contract is incompatible")
 
     return SourceControllerBundle(
         dataset=dataset,
@@ -144,5 +201,6 @@ __all__ = [
     "SourceControllerBundle",
     "SourceControllerBundleError",
     "load_source_controller_bundle",
+    "validate_controller_distribution_fixtures",
     "validate_query_embedding_fixtures",
 ]

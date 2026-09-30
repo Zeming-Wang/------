@@ -144,6 +144,10 @@ masfactory-visualizer/test/
 !applications/maas_reproduction/tests/*.py
 **/output/
 
+# Local JSON/JSONL files for maas_reproduction.
+applications/maas_reproduction/**/*.json
+applications/maas_reproduction/**/*.jsonl
+
 simplified_chatdev_*/
 
 WareHouse/

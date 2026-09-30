@@ -16,6 +16,7 @@ from ..attribute_firewall import assert_explicit_attribute_policies
 from ..native_bootstrap_graph.workflow import NativeBootstrapGraph
 from ..operator_dispatch_loop.workflow import OperatorDispatchLoop
 from ..benchmark_completion_graph import BenchmarkCompletionGraph
+from ..benchmark_completion_graph.humaneval_completion_graph import HumanEvalCompletionGraph
 
 
 class ArchitectureExecGraph(Graph):
@@ -39,6 +40,9 @@ class ArchitectureExecGraph(Graph):
         retry_limit: int = 1,
         max_dispatch_iterations: int = 100,
         cost_tracker: Any = None,
+        humaneval_test_protocol: Any = None,
+        humaneval_fallback: Any = None,
+        graph_max_attempts: int = 1,
         **kwargs: Any,
     ) -> None:
         self.policy_controller = policy_controller
@@ -51,6 +55,11 @@ class ArchitectureExecGraph(Graph):
         self.retry_limit = retry_limit
         self.max_dispatch_iterations = max_dispatch_iterations
         self.cost_tracker = cost_tracker
+        self.humaneval_test_protocol = humaneval_test_protocol
+        self.humaneval_fallback = humaneval_fallback
+        if isinstance(graph_max_attempts, bool) or not isinstance(graph_max_attempts, int) or graph_max_attempts < 1:
+            raise ValueError("graph_max_attempts must be a positive integer")
+        self.graph_max_attempts = graph_max_attempts
         super().__init__(name=name, pull_keys={}, push_keys={}, **kwargs)
 
     def build(self) -> None:
@@ -82,7 +91,19 @@ class ArchitectureExecGraph(Graph):
             operator_registry=self.operator_registry,
             max_iterations=self.max_dispatch_iterations,
         )
-        completion = self.create_node(BenchmarkCompletionGraph, "benchmark_completion", dataset=self.dataset)
+        if self.dataset == "HumanEval":
+            completion = self.create_node(
+                HumanEvalCompletionGraph,
+                "benchmark_completion",
+                protocol=self.humaneval_test_protocol,
+                fallback_adapter=self.humaneval_fallback,
+            )
+        else:
+            completion = self.create_node(
+                BenchmarkCompletionGraph,
+                "benchmark_completion",
+                dataset=self.dataset,
+            )
         finalize = self.create_node(
             FinalizeArchitectureResultNode,
             "finalize_architecture_result",
@@ -146,7 +167,14 @@ class ArchitectureExecGraph(Graph):
             except Exception as exc:  # finalizer reports unreliable cost
                 self._attributes_store["cost_before"] = None
                 self._attributes_store["cost_error"] = type(exc).__name__
-        return super()._forward(input)
+        last_error: Exception | None = None
+        for _attempt in range(1, self.graph_max_attempts + 1):
+            try:
+                return super()._forward(input)
+            except Exception as exc:
+                last_error = exc
+        assert last_error is not None
+        raise last_error
 
 
 def build_architecture_exec_graph(**kwargs: Any) -> ArchitectureExecGraph:

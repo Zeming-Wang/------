@@ -37,7 +37,10 @@ def _build_root(*, train: bool, scorer: object | None = None,
                 policy_controller: object | None = None, operator_embeddings: object | None = None,
                 operator_catalog: object | None = None, programmer: object | None = None,
                 generate: object | None = None, operator_registry: object | None = None,
-                dataset: str = "MATH", cost_tracker: object | None = None) -> RootGraph:
+                dataset: str = "MATH", cost_tracker: object | None = None,
+                humaneval_test_protocol: object | None = None,
+                humaneval_fallback: object | None = None,
+                graph_max_attempts: int = 1) -> RootGraph:
     root = MaASRootGraph(name="maas_train" if train else "maas_test")
     split = root.create_node(InputSplitNode, name="input_split")
     architecture = root.create_node(
@@ -51,6 +54,9 @@ def _build_root(*, train: bool, scorer: object | None = None,
         operator_registry=operator_registry,
         dataset=dataset,
         cost_tracker=cost_tracker,
+        humaneval_test_protocol=humaneval_test_protocol,
+        humaneval_fallback=humaneval_fallback,
+        graph_max_attempts=graph_max_attempts,
     )
     evaluator = root.create_node(EvaluatorNode, name="evaluator", scorer=scorer, pull_keys={})
     tail = (root.create_node(LossUpdateNode, name="loss_update", batch_accumulator=batch_accumulator, pull_keys={})

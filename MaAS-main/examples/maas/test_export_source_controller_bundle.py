@@ -61,3 +61,62 @@ def test_exporter_freezes_source_operator_text_and_embeddings(tmp_path):
     )
     assert bundle["operator_embeddings"].shape == (7, 384)
     assert bundle["operator_embeddings"][:, 0].tolist() == list(range(7))
+
+
+def test_humaneval_v2_exports_full_controller_distribution_fixtures(tmp_path):
+    exporter = _load_exporter()
+    catalog = exporter.OPERATOR_CATALOGS["HumanEval"]
+    controller_path = tmp_path / "HumanEval_controller.pth"
+    torch.save(_controller_state_dict(), controller_path)
+    operator_path = tmp_path / "operator.json"
+    operator_path.write_text(
+        json.dumps({name: {"description": name, "interface": f"{name}()"} for name in catalog}),
+        encoding="utf-8",
+    )
+    query_path = tmp_path / "queries.json"
+    query_path.write_text(json.dumps([f"problem {index}" for index in range(5)]), encoding="utf-8")
+    output_path = tmp_path / "humaneval-v2.pt"
+
+    class FakeLayer(torch.nn.Module):
+        def __init__(self, first):
+            super().__init__()
+            self.operator_encoder = torch.nn.Linear(384 if first else 768, 32)
+            self.query_encoder = torch.nn.Linear(384, 32)
+
+        def forward(self, query, operators, previous=None):
+            logits = torch.arange(len(catalog), dtype=torch.float32).unsqueeze(0)
+            return torch.log_softmax(logits, dim=1), torch.softmax(logits, dim=1)
+
+    class FakeController(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = torch.nn.ModuleList(FakeLayer(index == 0) for index in range(4))
+
+        def forward(self, _text, operators, names):
+            logs, selected = [], []
+            previous = None
+            for layer in self.layers:
+                log_probs, _ = layer(torch.zeros(384), operators, previous)
+                logs.append(log_probs[0, 0])
+                selected.append([names[0]])
+                previous = operators[[0]]
+            return logs, selected
+
+    exporter.export_source_controller_bundle(
+        dataset="HumanEval",
+        controller_path=controller_path,
+        operator_json_path=operator_path,
+        output_path=output_path,
+        query_fixture_path=query_path,
+        embedding_fn=lambda _text: torch.zeros(384),
+        controller_factory=FakeController,
+    )
+
+    bundle = torch.load(output_path, map_location="cpu")
+    assert bundle["format_version"] == 2
+    assert bundle["operator_catalog"] == catalog
+    assert len(bundle["metadata"]["controller_parity_fixtures"]) == 5
+    first = bundle["metadata"]["controller_parity_fixtures"][0]
+    assert len(first["layers"]) == 4
+    assert all(tuple(row["probs"].shape) == (len(catalog),) for row in first["layers"])
+    assert all(tuple(row["log_probs"].shape) == (len(catalog),) for row in first["layers"])
